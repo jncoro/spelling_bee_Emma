@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<!-- Spelling Bee — v5.9 (Stable rollback)
+ - EN-US voices; defaults to first available
+ - Start / Repeat; large input; simple layout
+ - Wrong letter clears + short beep; live coloring; faint dots after 5 wrongs
+ - GAME OVER after 10 wrong letters on same word
+ - Scoring: triangular per word; Best saved; Streak counter
+ - "Use it in a Sentence" + "Another Sentence" working
+ - "Definition" via dictionaryapi.dev (fallback none in this minimal stable)
+ - CSV upload (basic, no green modal in this rollback)
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spelling Bee — v5.9 (Stable)</title>
+  <style>
+    body {
+      background: #0f172a;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 10px;
+      max-width: 1200px;
+      margin: auto;
+    }
+    h1 { margin-top: 0; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    input, select, button {
+      background: #0b1020;
+      border: 1px solid #263041;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 6px;
+    }
+    #answer {
+      width: 100%;
+      font-size: 48px;
+      text-align: center;
+      padding: 12px;
+    }
+    #startBtn {
+      background: #22c55e;
+      color: #fff;
+      font-weight: bold;
+      border: none;
+    }
+    .letters-view {
+      font-family: monospace;
+      font-size: 32px;
+      margin-top: 10px;
+    }
+    .letter-ok { color: #fff; }
+    .letter-bad { color: #ef4444; }
+    .letter-remaining { color: #94a3b8; opacity: .5; }
+    .stat {
+      background: #0b1020;
+      border: 1px solid #263041;
+      border-radius: 8px;
+      padding: 6px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Spelling Bee</h1>
+  <div class="row">
+    <input type="file" id="csvUpload" accept=".csv">
+  </div>
+  <div class="row">
+    <label for="voiceSelect">Voice</label>
+    <select id="voiceSelect"></select>
+  </div>
+  <div class="row">
+    <button id="startBtn">Start ▶</button>
+    <button id="repeatBtn">Repeat</button>
+    <button id="sentenceBtn">Use it in a Sentence</button>
+    <button id="anotherSentenceBtn">Another Sentence</button>
+    <button id="defBtn">Definition</button>
+  </div>
+  <input id="answer" placeholder="Type word here" autocomplete="off" autocapitalize="none" spellcheck="false">
+  <div id="live" class="letters-view"></div>
+  <div class="stat">
+    Score: <span id="score">0</span> | Best: <span id="best">0</span> | Streak: <span id="streak">0</span>
+  </div>
+  <div class="stat">Wrong letters this word: <span id="wordWrongs">0</span></div>
+</div>
+
+<script>
+(function(){
+  var startBtn=document.getElementById('startBtn');
+  var repeatBtn=document.getElementById('repeatBtn');
+  var sentenceBtn=document.getElementById('sentenceBtn');
+  var anotherSentenceBtn=document.getElementById('anotherSentenceBtn');
+  var defBtn=document.getElementById('defBtn');
+  var answer=document.getElementById('answer');
+  var live=document.getElementById('live');
+  var scoreEl=document.getElementById('score');
+  var bestEl=document.getElementById('best');
+  var streakEl=document.getElementById('streak');
+  var wordWrongsEl=document.getElementById('wordWrongs');
+  var voiceSelect=document.getElementById('voiceSelect');
+  var csvUpload=document.getElementById('csvUpload');
+
+  var words=["opaque","squadron","cauldron","vacuum","amateur","schedule"];
+  var current='';
+  var score=0;
+  var best=Number(localStorage.getItem('sb_best')||'0')||0;bestEl.textContent=String(best);
+  var streak=0;
+  var wrongTriesCurrent=0;
+
+  // voices
+  var voicesList=[];
+  function populateVoices(){
+    while(voiceSelect.firstChild) voiceSelect.removeChild(voiceSelect.firstChild);
+    voicesList=(speechSynthesis.getVoices()||[]).filter(function(v){return (v.lang||'').toLowerCase().includes('en-us');});
+    if(!voicesList.length){
+      var o=document.createElement('option');
+      o.textContent='No voices';
+      voiceSelect.appendChild(o);
+      return;
+    }
+    voicesList.forEach(function(v){
+      var o=document.createElement('option');
+      o.value=v.name;
+      o.textContent=v.name;
+      voiceSelect.appendChild(o);
+    });
+    voiceSelect.value=voicesList[0].name;
+  }
+  speechSynthesis.onvoiceschanged=populateVoices;populateVoices();
+  function speak(t){
+    if(!t) return;
+    var u=new SpeechSynthesisUtterance(t);
+    var v=voicesList.find(function(v){return v.name===voiceSelect.value;});
+    if(v) u.voice=v;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }
+
+  function triangular(n){return n*(n+1)/2;}
+  function resetWordCounters(){wrongTriesCurrent=0;wordWrongsEl.textContent='0';}
+  function updateBest(){
+    if(score>best){
+      best=score;bestEl.textContent=String(best);
+      localStorage.setItem('sb_best',String(best));
+    }
+  }
+  function nextWord(){
+    current=words[Math.floor(Math.random()*words.length)];
+    speak(current);
+    answer.value='';
+    live.textContent='';
+    resetWordCounters();
+  }
+  function startGame(){
+    score=0;streak=0;
+    scoreEl.textContent='0';
+    streakEl.textContent='0';
+    nextWord();
+  }
+  startBtn.onclick=startGame;
+  repeatBtn.onclick=function(){if(current) speak(current);};
+
+  function renderLive(val){
+    var html='';
+    for(var i=0;i<val.length;i++){
+      var ok=val[i].toLowerCase()===current[i].toLowerCase();
+      html+=ok?'<span class="letter-ok">'+val[i]+'</span>':'<span class="letter-bad">'+val[i]+'</span>';
+    }
+    if(wrongTriesCurrent>=5){
+      for(var d=0;d<current.length-val.length;d++)
+        html+='<span class="letter-remaining">·</span>';
+    }
+    live.innerHTML=html;
+  }
+  function beep(){
+    var ctx=new (window.AudioContext||window.webkitAudioContext)();
+    var o=ctx.createOscillator();
+    var g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.type='square';o.frequency.value=220;
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.15);
+    o.stop(ctx.currentTime+0.16);
+  }
+
+  answer.addEventListener('input',function(){
+    if(!current) return;
+    var val=answer.value;
+    var wrong=false;
+    for(var i=0;i<val.length;i++){
+      if(val[i].toLowerCase()!==current[i].toLowerCase()){wrong=true;break;}
+    }
+    renderLive(val);
+    if(wrong){
+      answer.value='';
+      beep();
+      wrongTriesCurrent++;
+      wordWrongsEl.textContent=String(wrongTriesCurrent);
+      if(wrongTriesCurrent>=10){alert('GAME OVER');nextWord();}
+      return;
+    }
+    if(val.toLowerCase()===current.toLowerCase()){
+      score+=triangular(current.length);
+      scoreEl.textContent=String(score);
+      streak++;
+      streakEl.textContent=String(streak);
+      updateBest();
+      answer.value='';
+      live.innerHTML='';
+      resetWordCounters();
+      nextWord();
+    }
+  });
+
+  // Definition
+  async function fetchDefinition(w){
+    try{
+      var r=await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(w));
+      if(r.ok){
+        var j=await r.json();
+        if(Array.isArray(j)&&j[0]&&j[0].meanings&&j[0].meanings[0].definitions){
+          return j[0].meanings[0].definitions[0].definition||'';
+        }
+      }
+    }catch(e){}
+    return '';
+  }
+  async function speakDefinition(){
+    if(!current) return;
+    var d=await fetchDefinition(current);
+    speak(d?('Definition of '+current+': '+d):('No definition for '+current));
+  }
+
+  // Sentences
+  function buildSentences(w){return [
+    'The '+w+' was very important in the story.',
+    'During class, we learned what a '+w+' means.',
+    'At the museum, we learned how the '+w+' works.',
+    'The coach explained when the '+w+' is useful.'
+  ];}
+  var lastSent='';
+  function nextSentence(w,diff){
+    var list=buildSentences(w);
+    if(diff){
+      list=list.filter(function(s){return s!==lastSent});
+      if(!list.length) list=buildSentences(w);
+    }
+    var s=list[Math.floor(Math.random()*list.length)];
+    lastSent=s;
+    return s;
+  }
+  function speakSentence(diff){
+    if(!current) return;
+    var s=nextSentence(current,diff);
+    speak(s);
+  }
+
+  sentenceBtn.onclick=function(){speakSentence(false)};
+  anotherSentenceBtn.onclick=function(){speakSentence(true)};
+  defBtn.onclick=function(){speakDefinition()};
+
+  // CSV (basic): one word per line or first col, definitions ignored here
+  csvUpload.addEventListener('change',function(e){
+    var f=e.target.files&&e.target.files[0];
+    if(!f) return;
+    f.text().then(function(txt){
+      var rows=String(txt||'').replace(/\r/g,'').split('\n')
+        .map(function(t){return (t||'').trim()}).filter(Boolean);
+      if(!rows.length){alert('No words found in CSV');return;}
+      var first=rows[0].toLowerCase();
+      var hasHeader=(first.indexOf('word')===0||first.indexOf('term')===0);
+      var data=hasHeader?rows.slice(1):rows;
+      var out=[];
+      for(var i=0;i<data.length;i++){
+        var line=data[i];
+        var w=line.split(',')[0].replace(/"/g,'').trim();
+        if(w) out.push(w);
+      }
+      if(out.length){words=out;alert('Loaded '+out.length+' words.');}
+      else{alert('No words parsed from CSV.');}
+    }).catch(function(){alert('Error reading file');});
+  });
+})();
+</script>
+</body>
+</html>
