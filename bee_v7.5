@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<!-- Spelling Bee — v7.5 (Final)
+ - Robust audio context and voice loading
+ - Start/End game toggle functionality
+ - Custom, non-blocking modals for alerts
+ - Input overflow check for long answers
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spelling Bee — v7.5</title>
+  <style>
+    body {
+      background: #0f172a;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 780px; /* Increased from 600px */
+      margin: auto;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      position: relative; /* Set as a positioning context for the score animation */
+    }
+    h1 { margin-top: 0; text-align: center; color: #f9fafb; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    #csvUpload {
+      display: none; /* Hide the default file input */
+    }
+    label { font-weight: 500; }
+    #voiceSelect {
+      flex-grow: 1; /* Allow the voice select to fill available space */
+    }
+    #uploadBtn {
+      background-color: #3b82f6;
+      color: #fff;
+      border-color: #3b82f6;
+    }
+    #uploadBtn:hover {
+      background-color: #2563eb;
+    }
+    input, select, button {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      transition: background-color 0.2s, border-color 0.2s;
+      box-sizing: border-box; /* Ensures padding is inside the height */
+      height: 42px; /* Set a consistent height */
+    }
+    button {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    button:hover { background-color: #374151; }
+    #answer {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1 / 0.15;
+      display: flex; /* Changed from block to flex */
+      align-items: center; /* Added for vertical centering */
+      justify-content: center; /* Added for horizontal centering */
+      margin: 0 0 12px;
+      box-sizing: border-box;
+      font-size: 48px;
+      padding: 12px;
+      background: #0f172a;
+      border: 1px solid #374151;
+    }
+    #answer:focus { outline: none; border-color: #3b82f6; }
+    #startBtn {
+      background: #22c55e;
+      color: #fff;
+      font-weight: bold;
+      border: none;
+    }
+    #startBtn.game-active { background: #ef4444; }
+    #startBtn:hover { background: #16a34a; }
+    #startBtn.game-active:hover { background: #dc2626; }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background-color: #374151 !important;
+    }
+    /* Style for the content-editable div to simulate a placeholder */
+    #answer:empty:not(:focus)::before {
+      content: attr(data-placeholder);
+      color: #6b7280; /* Muted placeholder color */
+    }
+    .controls-row button {
+      flex-grow: 1;
+      flex-basis: 0; /* Ensures even distribution of space */
+    }
+    .upload-row {
+      flex-wrap: nowrap;
+    }
+    .upload-row > button {
+      flex: 0 0 calc((100% - 32px) / 5); /* Set width to match one of the 5 buttons below (accounting for 4 gaps of 8px) */
+    }
+    .upload-row > select {
+      flex: 1 1 auto; /* Grow to fill the remaining space */
+      min-width: 0; /* Allows the element to shrink past its default minimum content width */
+    }
+    .letters-view {
+      font-family: monospace;
+      font-size: 32px;
+      margin-top: 10px;
+      text-align: center;
+      min-height: 40px;
+    }
+    .letter-ok { color: #4ade80; }
+    .letter-bad { color: #ef4444; }
+    .letter-remaining { color: #4b5563; }
+    .stat {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      text-align: center;
+    }
+    /* --- Styles for Missed Words Log --- */
+    .missed-words-container {
+      margin-top: 12px;
+      padding: 10px;
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 8px;
+    }
+    .missed-words-container h2 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 16px;
+      text-align: center;
+      color: #9ca3af;
+      font-weight: normal;
+    }
+    .missed-words-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      color: #facc15; /* Yellow font */
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .missed-word-item {
+      text-align: center;
+      background: #0f172a;
+      padding: 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* --- Animation for floating score --- */
+    @keyframes floatUp {
+      to {
+        opacity: 0;
+        transform: translate(-50%, -60px); /* Move up and fade out */
+      }
+    }
+    .score-float {
+      position: absolute;
+      bottom: 85px; /* Start position right above the stats */
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 38px; /* Increased by 30% for better visibility */
+      font-weight: bold;
+      color: #4ade80; /* Bright green */
+      pointer-events: none; /* Prevent interaction */
+      animation: floatUp 1.5s ease-out forwards;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Spelling Bee</h1>
+  <div class="row upload-row">
+    <button id="uploadBtn">Upload CSV</button>
+    <input type="file" id="csvUpload" accept=".csv" title="Upload a custom word list (one word per line)">
+    <select id="voiceSelect"></select>
+  </div>
+  <div class="row controls-row">
+    <button id="startBtn">Start ▶</button>
+    <button id="repeatBtn">Repeat</button>
+    <button id="sentenceBtn">Use it in a Sentence</button>
+    <button id="anotherSentenceBtn">Another Sentence</button>
+    <button id="defBtn">Definition</button>
+  </div>
+  <div id="answer" data-placeholder="Type word here" contenteditable="true" spellcheck="false" autocapitalize="none" autocomplete="off"></div>
+  <div class="stat">
+    Score: <span id="score">0</span> | Best: <span id="best">0</span> | Streak: <span id="streak">0</span>
+  </div>
+  <div class="stat">Wrong letters this word: <span id="wordWrongs">0</span></div>
+  <div id="missedWordsLog" class="missed-words-container">
+    <h2>Words to Practice</h2>
+    <div id="missedWordsGrid" class="missed-words-grid"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // --- DOM Elements ---
+  const startBtn = document.getElementById('startBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const repeatBtn = document.getElementById('repeatBtn');
+  const sentenceBtn = document.getElementById('sentenceBtn');
+  const anotherSentenceBtn = document.getElementById('anotherSentenceBtn');
+  const defBtn = document.getElementById('defBtn');
+  const answer = document.getElementById('answer');
+  const live = document.getElementById('live');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const streakEl = document.getElementById('streak');
+  const wordWrongsEl = document.getElementById('wordWrongs');
+  const voiceSelect = document.getElementById('voiceSelect');
+  const csvUpload = document.getElementById('csvUpload');
+  const missedWordsGrid = document.getElementById('missedWordsGrid');
+  const allButtons = [repeatBtn, sentenceBtn, anotherSentenceBtn, defBtn];
+  const card = document.querySelector('.card'); // Get the main card for positioning
+
+  // --- State Variables ---
+  let words = ["opaque", "squadron", "cauldron", "vacuum", "amateur", "schedule", "cemetery", "privilege", "rhythm"];
+  let current = '';
+  let usedWordsThisGame = []; // Archive all words used in the current game session
+  let score = 0;
+  let best = Number(localStorage.getItem('sb_best') || '0');
+  let streak = 0;
+  let wrongTriesCurrent = 0;
+  let voicesList = [];
+  let lastSent = '';
+  let missedWords = JSON.parse(localStorage.getItem('sb_missedWords') || '[]');
+  
+  bestEl.textContent = String(best);
+
+  // --- Audio (beep) ---
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const ensureAudio = async () => {
+    try { if (audioCtx.state === 'suspended') await audioCtx.resume(); } catch (e) { console.error("Could not resume audio context:", e); }
+  };
+  const beep = async () => {
+    await ensureAudio();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.15);
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.16);
+  };
+  
+  // --- UI & Modals ---
+  function showCustomAlert(message, onConfirm) {
+    const modalOverlay = document.createElement('div');
+    modalOverlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = 'background: #1f2937; color: #e5e7eb; padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3);';
+    modalContent.innerHTML = `<p style="margin: 0 0 20px 0;">${message}</p>`;
+    const okButton = document.createElement('button');
+    okButton.textContent = 'OK';
+    okButton.style.cssText = 'background: #3b82f6; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;';
+    okButton.onclick = () => {
+      document.body.removeChild(modalOverlay);
+      if (onConfirm) onConfirm();
+    };
+    modalContent.appendChild(okButton);
+    modalOverlay.appendChild(modalContent);
+    document.body.appendChild(modalOverlay);
+    okButton.focus();
+  }
+
+  // --- Missed Words Log ---
+  const renderMissedWordsLog = () => {
+    missedWordsGrid.innerHTML = ''; // Clear the grid
+    missedWords.forEach(word => {
+      const wordEl = document.createElement('div');
+      wordEl.textContent = word;
+      wordEl.className = 'missed-word-item';
+      wordEl.title = word; // Show full word on hover
+      missedWordsGrid.appendChild(wordEl);
+    });
+  };
+
+  const updateMissedWordsLog = (word) => {
+    if (!missedWords.includes(word)) {
+      missedWords.push(word);
+      if (missedWords.length > 50) {
+        missedWords.shift(); // Remove the oldest word to keep the list at 50 max
+      }
+      localStorage.setItem('sb_missedWords', JSON.stringify(missedWords));
+      renderMissedWordsLog();
+    }
+  };
+
+  // --- Speech Synthesis ---
+  const populateVoices = () => {
+    voiceSelect.innerHTML = '';
+    const allVoices = (speechSynthesis.getVoices() || []).filter(v => v.lang.toLowerCase().startsWith('en'));
+    
+    if (!allVoices.length) {
+      voiceSelect.add(new Option('Loading voices…', ''));
+      return false;
+    }
+
+    // --- Curated Voice Selection ---
+    // Prioritize a list of high-quality, commonly available voices.
+    const femaleVoiceKeywords = ['emma', 'samantha', 'zira', 'tessa', 'catherine', 'google uk english female'];
+    const maleVoiceKeywords = ['daniel', 'alex', 'david', 'tom', 'google us english'];
+
+    const availableFemale = [];
+    const availableMale = [];
+    const addedVoices = new Set(); // Prevents duplicate voices
+
+    allVoices.forEach(voice => {
+      const voiceNameLower = voice.name.toLowerCase();
+      if (addedVoices.has(voice.name)) return;
+
+      if (availableFemale.length < 4 && femaleVoiceKeywords.some(keyword => voiceNameLower.includes(keyword))) {
+        availableFemale.push(voice);
+        addedVoices.add(voice.name);
+      } else if (availableMale.length < 4 && maleVoiceKeywords.some(keyword => voiceNameLower.includes(keyword))) {
+        availableMale.push(voice);
+        addedVoices.add(voice.name);
+      }
+    });
+
+    const curatedVoices = [...availableFemale, ...availableMale];
+    
+    // If the curated list is too small, fallback to all available English voices.
+    voicesList = curatedVoices.length >= 2 ? curatedVoices : allVoices;
+    
+    voicesList.forEach(v => voiceSelect.add(new Option(`${v.name} (${v.lang})`, v.name)));
+    
+    // --- Set Default Voice from the curated list ---
+    const preferredVoiceNames = ['emma', 'samantha', 'daniel', 'alex', 'google us english'];
+    let foundVoice = null;
+    for (const name of preferredVoiceNames) {
+        foundVoice = voicesList.find(v => v.name.toLowerCase().includes(name));
+        if (foundVoice) break;
+    }
+    
+    if (foundVoice) {
+        voiceSelect.value = foundVoice.name;
+    } else if (voicesList.length > 0) {
+        voiceSelect.value = voicesList[0].name; // Default to the first in the list
+    }
+
+    return true;
+  };
+
+  speechSynthesis.onvoiceschanged = populateVoices;
+  if (!populateVoices()) setTimeout(populateVoices, 300);
+
+  const speak = (text) => {
+    if (!text || !speechSynthesis) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    const selectedVoice = voicesList.find(v => v.name === voiceSelect.value);
+    if (selectedVoice) utterance.voice = selectedVoice;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+  };
+
+  // --- Game Logic ---
+  const triangular = n => n * (n + 1) / 2;
+  const resetWordCounters = () => {
+    wrongTriesCurrent = 0;
+    wordWrongsEl.textContent = '0';
+  };
+  const updateBest = () => {
+    if (score > best) {
+      best = score;
+      bestEl.textContent = String(best);
+      localStorage.setItem('sb_best', String(best));
+    }
+  };
+  
+  const setGameActive = (isActive) => {
+    answer.contentEditable = isActive;
+    allButtons.forEach(btn => btn.disabled = !isActive);
+    if (isActive) {
+      answer.focus();
+      startBtn.textContent = 'End Game';
+      startBtn.classList.add('game-active');
+    } else {
+      startBtn.textContent = 'Start ▶';
+      startBtn.classList.remove('game-active');
+      current = '';
+      answer.innerHTML = '';
+    }
+  };
+
+  const nextWord = () => {
+    // Find all words that haven't been used in this session yet
+    let availableWords = words.filter(word => !usedWordsThisGame.includes(word));
+
+    // If all words have been used, reset the archive for this session (reshuffle the deck)
+    if (availableWords.length === 0) {
+      usedWordsThisGame = [];
+      availableWords = words;
+    }
+
+    // Select a random word from the available list
+    const newWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+    
+    current = newWord || words[0] || ''; // Fallback for single-word lists
+
+    // Add the new word to the archive for this session
+    usedWordsThisGame.push(current);
+
+    speak(current);
+    answer.innerHTML = '';
+    answer.focus();
+    resetWordCounters();
+  };
+
+  const startGame = async () => {
+    if (current) { // If game is running, stop it
+      setGameActive(false);
+      return;
+    }
+    await ensureAudio();
+    score = 0;
+    streak = 0;
+    usedWordsThisGame = []; // Clear the used word archive for a new game
+    scoreEl.textContent = '0';
+    streakEl.textContent = '0';
+    setGameActive(true);
+    nextWord();
+  };
+
+  const renderLive = (val) => {
+    let html = '';
+    for (let i = 0; i < val.length; i++) {
+      const isOk = i < current.length && val[i].toLowerCase() === current[i].toLowerCase();
+      html += `<span class="letter-${isOk ? 'ok' : 'bad'}">${val[i]}</span>`;
+    }
+    if (wrongTriesCurrent >= 5) {
+      const remaining = Math.max(0, current.length - val.length);
+      html += '<span class="letter-remaining">' + '·'.repeat(remaining) + '</span>';
+    }
+    answer.innerHTML = html;
+
+    // Move cursor to the end after re-rendering the content
+    const range = document.createRange();
+    const sel = window.getSelection();
+    if (answer.childNodes.length > 0) {
+      range.setStart(answer.childNodes[val.length - 1] || answer.lastChild, 1);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  };
+
+  // --- API & Sentences ---
+  async function fetchDefinition(word) {
+    try {
+      const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Navigate through the complex object to find the first definition
+        return data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || '';
+      }
+    } catch (err) {
+      console.error('Definition fetch error:', err);
+    }
+    return ''; // Return empty string if fetch fails or no definition is found
+  }
+
+  const speakDefinition = async () => {
+    if (!current) return;
+    const originalText = defBtn.textContent;
+    defBtn.textContent = 'Loading…';
+    defBtn.disabled = true;
+
+    const definition = await fetchDefinition(current);
+    const textToSpeak = definition
+      ? `Definition of ${current}: ${definition}`
+      : `No definition found for ${current}`;
+    
+    speak(textToSpeak);
+
+    // Restore the button after speaking
+    defBtn.textContent = originalText;
+    // Re-enable only if the game is still active
+    if (startBtn.classList.contains('game-active')) {
+        defBtn.disabled = false;
+    }
+  };
+  
+  const buildSentences = (word) => {
+    const w = word.toLowerCase();
+    const sentenceMap = {
+      'opaque': [
+        'The frosted glass in the bathroom is opaque for privacy.',
+        "The politician's motives were opaque and difficult to understand."
+      ],
+      'squadron': [
+        'A squadron of planes flew in tight formation over the base.',
+        'The commander addressed the entire squadron before the mission.'
+      ],
+      'cauldron': [
+        'The witch stirred the bubbling potion in a large iron cauldron.',
+        'The story described a bubbling cauldron filled with a green liquid.'
+      ],
+      'vacuum': [
+        'I used the vacuum cleaner to remove dust from the rug.',
+        'Space is a vast, silent vacuum between the stars.'
+      ],
+      'amateur': [
+        'The amateur painter entered the local art competition for fun.',
+        'While only an amateur photographer, her pictures were surprisingly professional.'
+      ],
+      'schedule': [
+        'According to the schedule, the bus should arrive in five minutes.',
+        'Her busy schedule left very little time for relaxation.'
+      ],
+      'cemetery': [
+        'They walked through the quiet cemetery to visit their ancestors.',
+        'The old cemetery was filled with historic gravestones.'
+      ],
+      'privilege': [
+        'It is a great privilege to witness such a historic event.',
+        'Access to clean water should be a right, not a privilege.'
+      ],
+      'rhythm': [
+        'The dancer moved to the infectious rhythm of the music.',
+        'He tapped his foot to the steady rhythm of the drum.'
+      ]
+    };
+
+    if (sentenceMap[w]) {
+      return sentenceMap[w];
+    }
+
+    // Fallback for custom words that avoids self-reference.
+    return [
+      `The book provided a clear description of the ${word}.`,
+      `Understanding the concept of a ${word} was the main goal.`
+    ];
+  };
+
+  const nextSentence = (word, differentFromLast) => {
+    let list = buildSentences(word);
+    if (differentFromLast && list.length > 1) {
+      list = list.filter(s => s !== lastSent);
+      if (!list.length) list = buildSentences(word); // Fallback if all sentences were the same
+    }
+    const sentence = list[Math.floor(Math.random() * list.length)];
+    lastSent = sentence;
+    return sentence;
+  };
+  
+  const speakSentence = (isDifferent) => { if (current) speak(nextSentence(current, isDifferent)); };
+
+  // --- Event Listeners ---
+  startBtn.onclick = startGame;
+  uploadBtn.onclick = () => csvUpload.click(); // Trigger hidden file input
+  repeatBtn.onclick = () => { if (current) speak(current); };
+  defBtn.onclick = speakDefinition;
+  sentenceBtn.onclick = () => speakSentence(false);
+  anotherSentenceBtn.onclick = () => speakSentence(true);
+  
+  // Prevent pasting styled text into the contenteditable div
+  answer.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
+
+  answer.addEventListener('input', async () => {
+    if (!current) return;
+    const val = answer.textContent || '';
+
+    if (val.length > current.length) {
+      await beep();
+      wrongTriesCurrent++;
+      wordWrongsEl.textContent = String(wrongTriesCurrent);
+      if (wrongTriesCurrent === 5) updateMissedWordsLog(current);
+      renderLive(val);
+      answer.value = '';
+      if (wrongTriesCurrent >= 10) {
+        setGameActive(false);
+        showCustomAlert(`GAME OVER. Your final score was ${score}.`, startGame);
+      }
+      return;
+    }
+
+    let isWrong = false;
+    for (let i = 0; i < val.length; i++) {
+      if (val[i].toLowerCase() !== current[i].toLowerCase()) {
+        isWrong = true;
+        break;
+      }
+    }
+
+    renderLive(val);
+
+    if (isWrong) {
+      await beep();
+      wrongTriesCurrent++;
+      wordWrongsEl.textContent = String(wrongTriesCurrent);
+      if (wrongTriesCurrent === 5) updateMissedWordsLog(current);
+      
+      // Temporarily disable input to show the mistake
+      answer.contentEditable = false;
+      
+      setTimeout(() => {
+        answer.innerHTML = ''; // Clear live view after the delay
+        // Re-enable input only if the game is still active
+        if (startBtn.classList.contains('game-active')) {
+            answer.contentEditable = true;
+            answer.focus();
+        }
+      }, 1000); // 1-second delay
+
+      if (wrongTriesCurrent >= 10) {
+        setGameActive(false);
+        showCustomAlert(`GAME OVER. Your final score was ${score}.`, startGame);
+      }
+      return;
+    }
+
+    if (val.toLowerCase() === current.toLowerCase()) {
+      const points = triangular(current.length);
+      score += points;
+      streak++;
+      scoreEl.textContent = String(score);
+      streakEl.textContent = String(streak);
+      updateBest();
+      
+      // --- Trigger Score Animation ---
+      const pointsEl = document.createElement('div');
+      pointsEl.textContent = `+${points}`;
+      pointsEl.className = 'score-float';
+      card.appendChild(pointsEl);
+      setTimeout(() => {
+        card.removeChild(pointsEl);
+      }, 1500); // Remove after animation finishes
+
+      nextWord();
+    }
+  });
+
+  csvUpload.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    file.text().then(text => {
+      const rows = text.replace(/\r/g, '').split('\n').map(t => t.trim()).filter(Boolean);
+      if (!rows.length) {
+        showCustomAlert('No words found in CSV file.');
+        return;
+      }
+      const hasHeader = /word|term/i.test(rows[0]);
+      const data = hasHeader ? rows.slice(1) : rows;
+      const parsedWords = data.map(line => line.split(',')[0].replace(/^"|"$/g, '').trim()).filter(Boolean);
+      if (parsedWords.length) {
+        words = parsedWords;
+        setGameActive(false);
+        showCustomAlert(`Loaded ${words.length} words. Click OK to start a new game.`, startGame);
+      } else {
+        showCustomAlert('Could not parse any words from the CSV file.');
+      }
+    }).catch((err) => {
+      console.error("File read error:", err);
+      showCustomAlert('Error reading the file.');
+    });
+  });
+  
+  // Initial UI state
+  setGameActive(false);
+  renderMissedWordsLog(); // Render the log on initial load
+})();
+</script>
+</body>
+</html>
+
