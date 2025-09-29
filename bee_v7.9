@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<!-- Spelling Bee — v7.6 (Refactored)
+ - Modernized with modular JavaScript structure for better maintainability.
+ - Improved efficiency with CSS variables and a persistent modal element.
+ - Enhanced cross-platform compatibility with robust DOM event handling.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spelling Bee — v7.6 (Refactored)</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #111827;
+      --bg-tertiary: #1f2937;
+      --border-color: #374151;
+      --text-primary: #e5e7eb;
+      --text-secondary: #9ca3af;
+      --text-placeholder: #6b7280;
+      --accent-green: #22c55e;
+      --accent-green-hover: #16a34a;
+      --accent-green-ok: #4ade80;
+      --accent-red: #ef4444;
+      --accent-red-hover: #dc2626;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-yellow: #facc15;
+    }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 780px;
+      margin: auto;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      position: relative;
+    }
+    h1 { margin-top: 0; text-align: center; color: var(--text-primary); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    #csvUpload { display: none; }
+    #uploadBtn {
+      background-color: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+    #uploadBtn:hover { background-color: var(--accent-blue-hover); }
+    input, select, button {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      transition: background-color 0.2s, border-color 0.2s;
+      box-sizing: border-box;
+      height: 42px;
+    }
+    button {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    button:hover { background-color: var(--border-color); }
+    button:disabled, button:disabled:hover {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background-color: var(--bg-tertiary);
+    }
+    #answer {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1 / 0.15;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 0 12px;
+      box-sizing: border-box;
+      font-size: 48px;
+      padding: 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+    }
+    #answer:focus { outline: none; border-color: var(--accent-blue); }
+    #answer:empty:not(:focus)::before {
+      content: attr(data-placeholder);
+      color: var(--text-placeholder);
+    }
+    #startBtn {
+      background: var(--accent-green);
+      color: #fff;
+      font-weight: bold;
+      border: none;
+    }
+    #startBtn.game-active { background: var(--accent-red); }
+    #startBtn:hover { background: var(--accent-green-hover); }
+    #startBtn.game-active:hover { background: var(--accent-red-hover); }
+    .controls-row button {
+      flex-grow: 1;
+      flex-basis: 0;
+    }
+    .upload-row { flex-wrap: nowrap; }
+    .upload-row > button { flex: 0 0 calc((100% - 32px) / 5); }
+    .upload-row > select {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .letter-ok { color: var(--accent-green-ok); }
+    .letter-bad { color: var(--accent-red); }
+    .stat {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      text-align: center;
+    }
+    .missed-words-container {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+    .missed-words-container h2 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 16px;
+      text-align: center;
+      color: var(--text-secondary);
+      font-weight: normal;
+    }
+    .missed-words-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      color: var(--accent-yellow);
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .missed-word-item {
+      text-align: center;
+      background: var(--bg-primary);
+      padding: 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @keyframes floatUp {
+      to {
+        opacity: 0;
+        transform: translate(-50%, -60px);
+      }
+    }
+    .score-float {
+      position: absolute;
+      bottom: 85px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 38px;
+      font-weight: bold;
+      color: var(--accent-green-ok);
+      pointer-events: none;
+      animation: floatUp 1.5s ease-out forwards;
+    }
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+      background: rgba(0,0,0,0.6); 
+      display: flex; justify-content: center; align-items: center; 
+      z-index: 1000;
+    }
+    .modal-content {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 20px; border-radius: 8px; text-align: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    .modal-content p { margin: 0 0 20px 0; }
+    .modal-content button {
+      background: var(--accent-blue);
+      color: #fff; border: none; padding: 10px 20px;
+      border-radius: 5px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Spelling Bee</h1>
+  <div class="row upload-row">
+    <button id="uploadBtn">Upload CSV</button>
+    <input type="file" id="csvUpload" accept=".csv" title="Upload a custom word list">
+    <select id="voiceSelect"></select>
+  </div>
+  <div class="row controls-row">
+    <button id="startBtn">Start ▶</button>
+    <button id="repeatBtn">Repeat</button>
+    <button id="sentenceBtn">Use it in a Sentence</button>
+    <button id="anotherSentenceBtn">Another Sentence</button>
+    <button id="defBtn">Definition</button>
+  </div>
+  <div id="answer" data-placeholder="Type word here" contenteditable="true" spellcheck="false" autocapitalize="none" autocomplete="off"></div>
+  <div class="stat">
+    Score: <span id="score">0</span> | Best: <span id="best">0</span> | Streak: <span id="streak">0</span>
+  </div>
+  <div class="stat">Wrong letters this word: <span id="wordWrongs">0</span></div>
+  <div id="missedWordsLog" class="missed-words-container">
+    <h2>Words to Practice</h2>
+    <div id="missedWordsGrid" class="missed-words-grid"></div>
+  </div>
+</div>
+<!-- Persistent Modal for Alerts -->
+<div id="modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <p id="modalMessage"></p>
+    <button id="modalOkBtn">OK</button>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // --- A. DOM Element Connections ---
+  const DOMElements = {
+    card: document.querySelector('.card'),
+    startBtn: document.getElementById('startBtn'),
+    uploadBtn: document.getElementById('uploadBtn'),
+    csvUpload: document.getElementById('csvUpload'),
+    voiceSelect: document.getElementById('voiceSelect'),
+    answer: document.getElementById('answer'),
+    scoreEl: document.getElementById('score'),
+    bestEl: document.getElementById('best'),
+    streakEl: document.getElementById('streak'),
+    wordWrongsEl: document.getElementById('wordWrongs'),
+    missedWordsGrid: document.getElementById('missedWordsGrid'),
+    modal: document.getElementById('modal'),
+    modalMessage: document.getElementById('modalMessage'),
+    modalOkBtn: document.getElementById('modalOkBtn'),
+    controlButtons: [
+      document.getElementById('repeatBtn'),
+      document.getElementById('sentenceBtn'),
+      document.getElementById('anotherSentenceBtn'),
+      document.getElementById('defBtn'),
+    ],
+  };
+
+  // --- B. Application State ---
+  const state = {
+    words: ["opaque", "squadron", "cauldron", "vacuum", "amateur", "schedule", "cemetery", "privilege", "rhythm"],
+    currentWord: '',
+    usedWordsThisGame: [],
+    score: 0,
+    best: Number(localStorage.getItem('sb_best') || '0'),
+    streak: 0,
+    wrongTriesCurrent: 0,
+    voicesList: [],
+    lastSentence: '',
+    missedWords: JSON.parse(localStorage.getItem('sb_missedWords') || '[]'),
+  };
+
+  // --- C. Modules (UI, Audio, Speech, Game Logic) ---
+
+  // Handles all direct interactions with the DOM
+  const UI = {
+    renderScore: () => {
+      DOMElements.scoreEl.textContent = state.score;
+      DOMElements.streakEl.textContent = state.streak;
+    },
+    renderBest: () => {
+      DOMElements.bestEl.textContent = state.best;
+    },
+    renderWordWrongs: () => {
+      DOMElements.wordWrongsEl.textContent = state.wrongTriesCurrent;
+    },
+    renderMissedWordsLog: () => {
+      DOMElements.missedWordsGrid.innerHTML = '';
+      state.missedWords.forEach(word => {
+        const wordEl = document.createElement('div');
+        wordEl.textContent = word;
+        wordEl.className = 'missed-word-item';
+        wordEl.title = word;
+        DOMElements.missedWordsGrid.appendChild(wordEl);
+      });
+    },
+    showModal: (message, onConfirm) => {
+      DOMElements.modalMessage.textContent = message;
+      DOMElements.modal.style.display = 'flex';
+      DOMElements.modalOkBtn.onclick = () => {
+        DOMElements.modal.style.display = 'none';
+        if (onConfirm) onConfirm();
+      };
+      DOMElements.modalOkBtn.focus();
+    },
+    setGameActive: (isActive) => {
+      DOMElements.answer.contentEditable = isActive;
+      DOMElements.controlButtons.forEach(btn => btn.disabled = !isActive);
+      if (isActive) {
+        DOMElements.answer.focus();
+        DOMElements.startBtn.textContent = 'End Game';
+        DOMElements.startBtn.classList.add('game-active');
+      } else {
+        DOMElements.startBtn.textContent = 'Start ▶';
+        DOMElements.startBtn.classList.remove('game-active');
+        state.currentWord = '';
+        DOMElements.answer.innerHTML = '';
+      }
+    },
+    renderLiveAnswer: (textValue) => {
+      let html = '';
+      for (let i = 0; i < textValue.length; i++) {
+        const isOk = i < state.currentWord.length && textValue[i].toLowerCase() === state.currentWord[i].toLowerCase();
+        html += `<span class="letter-${isOk ? 'ok' : 'bad'}">${textValue[i]}</span>`;
+      }
+      DOMElements.answer.innerHTML = html;
+      // Set cursor to the end of the contenteditable div
+      const range = document.createRange();
+      const sel = window.getSelection();
+      if (DOMElements.answer.childNodes.length > 0) {
+        range.setStart(DOMElements.answer.lastChild, 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    },
+    showPointsAnimation: (points) => {
+      const pointsEl = document.createElement('div');
+      pointsEl.textContent = `+${points}`;
+      pointsEl.className = 'score-float';
+      DOMElements.card.appendChild(pointsEl);
+      setTimeout(() => DOMElements.card.removeChild(pointsEl), 1500);
+    }
+  };
+
+  // Handles audio playback for the incorrect beep
+  const Audio = {
+    audioCtx: new (window.AudioContext || window.webkitAudioContext)(),
+    ensureContext: async function() {
+      if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
+    },
+    beep: async function() {
+      await this.ensureContext();
+      const oscillator = this.audioCtx.createOscillator();
+      const gainNode = this.audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(this.audioCtx.destination);
+      oscillator.type = 'square';
+      oscillator.frequency.setValueAtTime(220, this.audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(0.5, this.audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.15);
+      oscillator.start();
+      oscillator.stop(this.audioCtx.currentTime + 0.16);
+    }
+  };
+
+  // Handles speech synthesis and voice selection
+  const Speech = {
+    populateVoices: () => {
+      DOMElements.voiceSelect.innerHTML = '';
+      const allVoices = (speechSynthesis.getVoices() || []).filter(v => v.lang.toLowerCase().startsWith('en'));
+      if (!allVoices.length) {
+        DOMElements.voiceSelect.add(new Option('Loading voices…', ''));
+        return false;
+      }
+      const female = ['emma', 'samantha', 'zira', 'tessa', 'catherine', 'google uk english female'];
+      const male = ['daniel', 'alex', 'david', 'tom', 'google us english'];
+      const available = { female: [], male: [] };
+      const added = new Set();
+      allVoices.forEach(voice => {
+        const name = voice.name.toLowerCase();
+        if (added.has(voice.name)) return;
+        if (available.female.length < 4 && female.some(k => name.includes(k))) {
+          available.female.push(voice);
+          added.add(voice.name);
+        } else if (available.male.length < 4 && male.some(k => name.includes(k))) {
+          available.male.push(voice);
+          added.add(voice.name);
+        }
+      });
+      const curated = [...available.female, ...available.male];
+      state.voicesList = curated.length >= 2 ? curated : allVoices;
+      state.voicesList.forEach(v => DOMElements.voiceSelect.add(new Option(`${v.name} (${v.lang})`, v.name)));
+      const preferred = ['emma', 'samantha', 'daniel', 'alex'];
+      let found = null;
+      for (const name of preferred) {
+        found = state.voicesList.find(v => v.name.toLowerCase().includes(name));
+        if (found) break;
+      }
+      DOMElements.voiceSelect.value = found ? found.name : (state.voicesList[0]?.name || '');
+      return true;
+    },
+    speak: (text) => {
+      if (!text || !speechSynthesis) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      const selectedVoice = state.voicesList.find(v => v.name === DOMElements.voiceSelect.value);
+      if (selectedVoice) utterance.voice = selectedVoice;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
+    },
+    init: () => {
+      speechSynthesis.onvoiceschanged = Speech.populateVoices;
+      if (!Speech.populateVoices()) setTimeout(Speech.populateVoices, 300);
+    }
+  };
+
+  // Handles all core game logic and state changes
+  const Game = {
+    init: () => {
+      UI.renderBest();
+      UI.renderMissedWordsLog();
+      UI.setGameActive(false);
+      Speech.init();
+      Listeners.attachAll();
+    },
+    startGame: async () => {
+      if (state.currentWord) {
+        UI.setGameActive(false);
+        return;
+      }
+      await Audio.ensureContext();
+      state.score = 0;
+      state.streak = 0;
+      state.usedWordsThisGame = [];
+      UI.renderScore();
+      UI.setGameActive(true);
+      Game.nextWord();
+    },
+    nextWord: () => {
+      let available = state.words.filter(w => !state.usedWordsThisGame.includes(w));
+      if (available.length === 0) {
+        state.usedWordsThisGame = [];
+        available = state.words;
+      }
+      const newWord = available[Math.floor(Math.random() * available.length)];
+      state.currentWord = newWord || state.words[0] || '';
+      state.usedWordsThisGame.push(state.currentWord);
+      Speech.speak(state.currentWord);
+      DOMElements.answer.innerHTML = '';
+      DOMElements.answer.focus();
+      Game.resetWordCounters();
+    },
+    resetWordCounters: () => {
+      state.wrongTriesCurrent = 0;
+      UI.renderWordWrongs();
+    },
+    updateBest: () => {
+      if (state.score > state.best) {
+        state.best = state.score;
+        localStorage.setItem('sb_best', String(state.best));
+        UI.renderBest();
+      }
+    },
+    updateMissedWordsLog: (word) => {
+      if (!state.missedWords.includes(word)) {
+        state.missedWords.push(word);
+        if (state.missedWords.length > 50) state.missedWords.shift();
+        localStorage.setItem('sb_missedWords', JSON.stringify(state.missedWords));
+        UI.renderMissedWordsLog();
+      }
+    },
+    handleCorrectAnswer: () => {
+      const points = (state.currentWord.length * (state.currentWord.length + 1)) / 2;
+      state.score += points;
+      state.streak++;
+      UI.renderScore();
+      Game.updateBest();
+      UI.showPointsAnimation(points);
+      Game.nextWord();
+    },
+    handleIncorrectLetter: () => {
+      Audio.beep();
+      state.wrongTriesCurrent++;
+      UI.renderWordWrongs();
+      if (state.wrongTriesCurrent === 5) Game.updateMissedWordsLog(state.currentWord);
+      DOMElements.answer.contentEditable = false;
+      setTimeout(() => {
+        DOMElements.answer.innerHTML = '';
+        if (DOMElements.startBtn.classList.contains('game-active')) {
+          DOMElements.answer.contentEditable = true;
+          DOMElements.answer.focus();
+        }
+      }, 1000);
+      if (state.wrongTriesCurrent >= 10) {
+        UI.setGameActive(false);
+        UI.showModal(`GAME OVER. Your final score was ${state.score}.`, Game.startGame);
+      }
+    },
+  };
+
+  // --- D. API and Sentence Logic ---
+  const Content = {
+    fetchDefinition: async (word) => {
+      try {
+        const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+        if (res.ok) {
+          const data = await res.json();
+          return data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || '';
+        }
+      } catch (err) { console.error('Definition fetch error:', err); }
+      return '';
+    },
+    speakDefinition: async () => {
+      if (!state.currentWord) return;
+      const btn = DOMElements.controlButtons.find(b => b.id === 'defBtn');
+      const originalText = btn.textContent;
+      btn.textContent = 'Loading…';
+      btn.disabled = true;
+      const definition = await Content.fetchDefinition(state.currentWord);
+      const textToSpeak = definition ? `Definition: ${definition}` : `No definition found.`;
+      Speech.speak(textToSpeak);
+      btn.textContent = originalText;
+      if (DOMElements.startBtn.classList.contains('game-active')) btn.disabled = false;
+    },
+    getSentence: (word, isDifferent) => {
+      const w = word.toLowerCase();
+      const map = {
+        'opaque': ['The frosted glass is opaque.', 'His motives were opaque.'],
+        'squadron': ['A squadron of planes flew overhead.', 'She led the new squadron.'],
+        'cauldron': ['The witch stirred the iron cauldron.', 'A great cauldron of soup was boiling.'],
+        'vacuum': ['Space is a vast vacuum.', 'She used a vacuum to clean the rug.'],
+        'amateur': ['He was an amateur athlete.', 'The film was made by amateurs.'],
+        'schedule': ["What's on the schedule today?", 'Her schedule is very busy.'],
+        'cemetery': ['The cemetery was quiet and peaceful.', 'They visited the old cemetery.'],
+        'privilege': ['Education is a privilege.', 'He had the privilege of meeting the author.'],
+        'rhythm': ['The music has a good rhythm.', 'He found his rhythm in the race.']
+      };
+      let list = map[w] || [`The book described the ${w}.`, `He learned about the ${w}.`];
+      if (isDifferent && list.length > 1) {
+        list = list.filter(s => s !== state.lastSentence);
+      }
+      const sentence = list[Math.floor(Math.random() * list.length)];
+      state.lastSentence = sentence;
+      return sentence;
+    }
+  };
+
+  // --- E. Event Listeners ---
+  const Listeners = {
+    onAnswerInput: () => {
+      if (!state.currentWord) return;
+      const val = DOMElements.answer.textContent || '';
+      if (val.length > state.currentWord.length) {
+        Game.handleIncorrectLetter();
+        return;
+      }
+      let isWrong = false;
+      for (let i = 0; i < val.length; i++) {
+        if (val[i].toLowerCase() !== state.currentWord[i].toLowerCase()) {
+          isWrong = true;
+          break;
+        }
+      }
+      UI.renderLiveAnswer(val);
+      if (isWrong) {
+        Game.handleIncorrectLetter();
+      } else if (val.toLowerCase() === state.currentWord.toLowerCase()) {
+        Game.handleCorrectAnswer();
+      }
+    },
+    onPaste: (e) => {
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+    },
+    onCsvUpload: (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      file.text().then(text => {
+        const rows = text.replace(/\r/g, '').split('\n').map(t => t.trim()).filter(Boolean);
+        if (!rows.length) return UI.showModal('No words found in CSV.');
+        const hasHeader = /word|term/i.test(rows[0]);
+        const data = hasHeader ? rows.slice(1) : rows;
+        const parsed = data.map(line => line.split(',')[0].replace(/^"|"$/g, '').trim()).filter(Boolean);
+        if (parsed.length) {
+          state.words = parsed;
+          UI.setGameActive(false);
+          UI.showModal(`Loaded ${parsed.length} words.`, Game.startGame);
+        } else {
+          UI.showModal('Could not parse any words from CSV.');
+        }
+      }).catch(err => UI.showModal('Error reading file.'));
+    },
+    attachAll: () => {
+      DOMElements.startBtn.onclick = Game.startGame;
+      DOMElements.uploadBtn.onclick = () => DOMElements.csvUpload.click();
+      DOMElements.csvUpload.onchange = Listeners.onCsvUpload;
+      DOMElements.controlButtons.forEach(btn => {
+        if (btn.id === 'repeatBtn') btn.onclick = () => Speech.speak(state.currentWord);
+        if (btn.id === 'sentenceBtn') btn.onclick = () => Speech.speak(Content.getSentence(state.currentWord, false));
+        if (btn.id === 'anotherSentenceBtn') btn.onclick = () => Speech.speak(Content.getSentence(state.currentWord, true));
+        if (btn.id === 'defBtn') btn.onclick = Content.speakDefinition;
+      });
+      DOMElements.answer.addEventListener('input', Listeners.onAnswerInput);
+      DOMElements.answer.addEventListener('paste', Listeners.onPaste);
+    }
+  };
+
+  // --- F. Initialize the Application ---
+  Game.init();
+});
+</script>
+</body>
+</html>
+
