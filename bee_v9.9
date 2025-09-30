@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<!-- Spelling Bee — v9.3 (Layout & Stability Fix)
+ - Consolidated list management and voice controls into a single row.
+ - Corrected critical truncation bug that caused a blank canvas.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spelling Bee — v9.3 (Layout Fix)</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #111827;
+      --bg-tertiary: #1f2937;
+      --border-color: #374151;
+      --text-primary: #e5e7eb;
+      --text-secondary: #9ca3af;
+      --text-placeholder: #6b7280;
+      --accent-green: #22c55e;
+      --accent-green-hover: #16a34a;
+      --accent-green-ok: #4ade80;
+      --accent-red: #ef4444;
+      --accent-red-hover: #dc2626;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #2563eb;
+      --accent-yellow: #facc15;
+      /* Difficulty Backgrounds */
+      --bg-easy: #111827;
+      --bg-normal: #064e3b; /* Dark Green */
+      --bg-hard: #7f1d1d;   /* Dark Red */
+      --bg-insane: #000;    /* Black */
+    }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      overflow: hidden;
+      transition: background-color 0.5s ease;
+    }
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      width: 100%;
+      max-width: 780px;
+      margin: auto;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      position: relative;
+      z-index: 10;
+      transition: background-color 0.5s ease;
+    }
+    .difficulty-easy { background-color: var(--bg-easy); }
+    .difficulty-normal { background-color: var(--bg-normal); }
+    .difficulty-hard { background-color: var(--bg-hard); }
+    .difficulty-insane { background-color: var(--bg-insane); }
+
+    h1 { margin-top: 0; text-align: center; color: var(--text-primary); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    #csvUpload { display: none; }
+    #uploadBtn {
+      background-color: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+    #uploadBtn:hover { background-color: var(--accent-blue-hover); }
+    input, select, button {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      transition: background-color 0.2s, border-color 0.2s;
+      box-sizing: border-box;
+      height: 42px;
+    }
+    button {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    button:hover { background-color: var(--border-color); }
+    button:disabled, button:disabled:hover {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background-color: var(--bg-tertiary);
+    }
+    .difficulty-controls { justify-content: center; }
+    .difficulty-btn {
+      flex-grow: 1;
+      background-color: var(--bg-tertiary);
+    }
+    .difficulty-btn.active {
+      border-color: var(--accent-yellow);
+      color: var(--accent-yellow);
+      box-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+    }
+    #answer {
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1 / 0.15;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 0 12px;
+      box-sizing: border-box;
+      font-size: 72px;
+      padding: 12px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+    }
+    #answer:focus { outline: none; border-color: var(--accent-blue); }
+    #answer:focus:empty { caret-color: transparent; }
+    #answer:empty:not(:focus)::before {
+      content: attr(data-placeholder);
+      color: var(--text-placeholder);
+    }
+    #startBtn {
+      background: var(--accent-green);
+      color: #fff;
+      font-weight: bold;
+      border: none;
+    }
+    #startBtn.game-active { background: var(--accent-red); }
+    #startBtn:hover { background: var(--accent-green-hover); }
+    #startBtn.game-active:hover { background: var(--accent-red-hover); }
+    .controls-row button {
+      flex-grow: 1;
+      flex-basis: 0;
+    }
+    .list-management-row { flex-wrap: nowrap; }
+    .list-management-row > * { flex-shrink: 1; }
+    .list-management-row > select { flex-grow: 1; min-width: 0; }
+    
+    .letter-ok { color: var(--accent-green-ok); }
+    .letter-bad { color: var(--accent-red); }
+    .letter-remaining { color: var(--text-secondary); opacity: 0.8; }
+    .stat {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 8px;
+      text-align: center;
+    }
+    .missed-words-container {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+    .missed-words-container h2 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 16px;
+      text-align: center;
+      color: var(--text-secondary);
+      font-weight: normal;
+    }
+    .missed-words-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      color: var(--accent-yellow);
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .missed-word-item {
+      text-align: center;
+      background: var(--bg-primary);
+      padding: 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+    #answer:focus:empty::after {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 60px;
+      background-color: var(--text-primary);
+      animation: blink 1.2s infinite step-end;
+    }
+    @keyframes floatUp {
+      to {
+        opacity: 0;
+        transform: translate(-50%, -60px);
+      }
+    }
+    .score-float {
+      position: absolute;
+      bottom: 85px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 53px;
+      font-weight: bold;
+      color: var(--accent-green-ok);
+      pointer-events: none;
+      animation: floatUp 1.5s ease-out forwards;
+    }
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+      background: rgba(0,0,0,0.6); 
+      display: flex; justify-content: center; align-items: center; 
+      z-index: 1000;
+    }
+    .modal-content {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 20px; border-radius: 8px; text-align: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-content p { margin: 0 0 20px 0; }
+    .modal-content button {
+      background: var(--accent-blue);
+      color: #fff; border: none; padding: 10px 20px;
+      border-radius: 5px; cursor: pointer;
+    }
+    .prompt-input {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        border-radius: 4px;
+        padding: 10px;
+        font-size: 16px;
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 20px;
+    }
+    .prompt-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+    .prompt-buttons .cancel-btn {
+        background-color: var(--bg-tertiary);
+    }
+    .word-list-modal {
+      width: 90%;
+      max-width: 500px;
+    }
+    .word-list-container {
+      max-height: 50vh;
+      overflow-y: auto;
+      text-align: left;
+      margin-bottom: 20px;
+      padding: 10px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+    }
+    .word-list-item {
+      display: flex;
+      align-items: center;
+      padding: 6px;
+      font-size: 16px;
+    }
+     .word-list-item:nth-child(odd) {
+      background-color: rgba(255,255,255,0.05);
+    }
+    .word-list-item input {
+      margin-right: 12px;
+      width: 18px;
+      height: 18px;
+    }
+    .word-list-item label {
+      flex-grow: 1;
+      cursor: pointer;
+    }
+    #skull-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .skull {
+      position: absolute;
+      color: #000;
+      font-size: 24px;
+      opacity: 1;
+      animation: float-skull 20s linear infinite;
+    }
+    @keyframes float-skull {
+      0% { transform: translateY(100vh) rotate(0deg); }
+      100% { transform: translateY(-100px) rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+<div id="skull-container"></div>
+<div class="card" id="game-card">
+  <h1>Spelling Bee</h1>
+  <div class="row difficulty-controls">
+    <button class="difficulty-btn active" data-difficulty="EASY">EASY</button>
+    <button class="difficulty-btn" data-difficulty="NORMAL">NORMAL</button>
+    <button class="difficulty-btn" data-difficulty="HARD">HARD</button>
+    <button class="difficulty-btn" data-difficulty="INSANE">INSANE</button>
+  </div>
+   <div class="row list-management-row">
+    <button id="uploadBtn">Upload CSV</button>
+    <select id="listSelect"></select>
+    <select id="voiceSelect"></select>
+    <button id="deleteListBtn" title="Delete Selected List">🗑️</button>
+    <input type="file" id="csvUpload" accept=".csv" title="Upload a custom word list">
+  </div>
+  <div class="row controls-row">
+    <button id="startBtn">Start ▶</button>
+    <button id="repeatBtn">Repeat</button>
+    <button id="sentenceBtn">Use it in a Sentence</button>
+    <button id="anotherSentenceBtn">Another Sentence</button>
+    <button id="defBtn">Definition</button>
+    <button id="wordListBtn">Word List</button>
+  </div>
+  <div id="answer" data-placeholder="Type word here" contenteditable="true" spellcheck="false" autocapitalize="none" autocomplete="off"></div>
+  <div class="stat">
+    Score: <span id="score">0</span> | Best: <span id="best">0</span> | Streak: <span id="streak">0</span> | Top Streak: <span id="topStreak">0</span>
+  </div>
+  <div class="stat">Wrong letters this word: <span id="wordWrongs">0</span></div>
+  <div id="missedWordsLog" class="missed-words-container">
+    <h2>Words to Practice</h2>
+    <div id="missedWordsGrid" class="missed-words-grid"></div>
+  </div>
+</div>
+<!-- Modals -->
+<div id="modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <p id="modalMessage"></p>
+    <button id="modalOkBtn">OK</button>
+  </div>
+</div>
+<div id="promptModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <p id="promptMessage"></p>
+    <input type="text" id="promptInput" class="prompt-input" />
+    <div class="prompt-buttons">
+        <button id="promptCancelBtn" class="cancel-btn">Cancel</button>
+        <button id="promptSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+<div id="wordListModal" class="modal-overlay" style="display: none;">
+  <div class="modal-content word-list-modal">
+    <h2>Active Word List</h2>
+    <p style="font-size: 14px; color: var(--text-secondary)">Uncheck words to exclude them from the game (except on INSANE mode).</p>
+    <div id="wordListContainer" class="word-list-container"></div>
+    <button id="wordListCloseBtn">Close</button>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  const SpellingBee = {
+    // --- 1. DOM Elements & Constants ---
+    DOMElements: {
+      card: document.getElementById('game-card'),
+      skullContainer: document.getElementById('skull-container'),
+      startBtn: document.getElementById('startBtn'),
+      uploadBtn: document.getElementById('uploadBtn'),
+      deleteListBtn: document.getElementById('deleteListBtn'),
+      listSelect: document.getElementById('listSelect'),
+      csvUpload: document.getElementById('csvUpload'),
+      voiceSelect: document.getElementById('voiceSelect'),
+      answer: document.getElementById('answer'),
+      scoreEl: document.getElementById('score'),
+      bestEl: document.getElementById('best'),
+      streakEl: document.getElementById('streak'),
+      topStreakEl: document.getElementById('topStreak'),
+      wordWrongsEl: document.getElementById('wordWrongs'),
+      missedWordsGrid: document.getElementById('missedWordsGrid'),
+      // Modals
+      alertModal: {
+        overlay: document.getElementById('modal'),
+        message: document.getElementById('modalMessage'),
+        okBtn: document.getElementById('modalOkBtn'),
+      },
+      promptModal: {
+        overlay: document.getElementById('promptModal'),
+        message: document.getElementById('promptMessage'),
+        input: document.getElementById('promptInput'),
+        cancelBtn: document.getElementById('promptCancelBtn'),
+        saveBtn: document.getElementById('promptSaveBtn'),
+      },
+      wordListModal: {
+        overlay: document.getElementById('wordListModal'),
+        container: document.getElementById('wordListContainer'),
+        closeBtn: document.getElementById('wordListCloseBtn'),
+      },
+      difficultyBtns: document.querySelectorAll('.difficulty-btn'),
+      controlButtons: [
+        document.getElementById('repeatBtn'),
+        document.getElementById('sentenceBtn'),
+        document.getElementById('anotherSentenceBtn'),
+        document.getElementById('defBtn'),
+        document.getElementById('wordListBtn'),
+      ],
+    },
+    
+    difficultySettings: {
+      EASY:   { maxWrongTries: 10, hints: true,  className: 'difficulty-easy' },
+      NORMAL: { maxWrongTries: 6,  hints: true,  className: 'difficulty-normal' },
+      HARD:   { maxWrongTries: 3,  hints: false, className: 'difficulty-hard' },
+      INSANE: { maxWrongTries: 1,  hints: false, className: 'difficulty-insane' }
+    },
+
+    // --- 2. Application State ---
+    state: {
+      defaultWords: ["opaque", "squadron", "cauldron", "vacuum", "amateur", "schedule", "cemetery", "privilege", "rhythm"],
+      words: [],
+      customLists: {},
+      activeListName: 'Default',
+      wordsForThisSession: [],
+      inactiveWords: [],
+      currentWord: '',
+      usedWordsThisGame: [],
+      score: 0,
+      best: { EASY: 0, NORMAL: 0, HARD: 0, INSANE: 0 },
+      streak: 0,
+      topStreak: { EASY: 0, NORMAL: 0, HARD: 0, INSANE: 0 },
+      wrongTriesCurrent: 0,
+      voicesList: [],
+      lastSentence: '',
+      missedWords: [],
+      difficulty: 'EASY',
+    },
+
+    // --- 3. Initialization ---
+    init() {
+      this.loadStateFromStorage();
+      this.bindEvents();
+      this.UI.renderAll();
+      this.Speech.init();
+      this.UI.setGameActive(false);
+    },
+
+    loadStateFromStorage() {
+      this.state.customLists = JSON.parse(localStorage.getItem('sb_customLists') || '{}');
+      this.state.activeListName = localStorage.getItem('sb_activeListName') || 'Default';
+      this.state.inactiveWords = JSON.parse(localStorage.getItem('sb_inactiveWords') || '[]');
+      this.state.missedWords = JSON.parse(localStorage.getItem('sb_missedWords') || '[]');
+
+      for (const level in this.difficultySettings) {
+          this.state.best[level] = Number(localStorage.getItem(`sb_best_${level}`) || '0');
+          this.state.topStreak[level] = Number(localStorage.getItem(`sb_topStreak_${level}`) || '0');
+      }
+      this.Game.setActiveWordList(this.state.activeListName);
+    },
+
+    // --- 4. Event Binding ---
+    bindEvents() {
+      const handleSentenceClick = async (isDifferent) => {
+        const { state, Content, Speech, DOMElements } = this;
+        if (!state.currentWord) return;
+
+        const btnId = isDifferent ? 'anotherSentenceBtn' : 'sentenceBtn';
+        const btn = DOMElements.controlButtons.find(b => b.id === btnId);
+        if(!btn || btn.disabled) return;
+
+        const originalText = btn.textContent;
+        btn.textContent = 'Loading…';
+        btn.disabled = true;
+
+        let sentence = '';
+        try {
+            sentence = await Content.getSentence(state.currentWord, isDifferent);
+        } catch (error) {
+            console.error("Error getting sentence:", error);
+            sentence = "I am unable to generate a sentence at this time.";
+        } finally {
+            Speech.speak(sentence);
+            btn.textContent = originalText;
+            if (DOMElements.startBtn.classList.contains('game-active')) {
+                btn.disabled = false;
+            }
+        }
+      };
+
+      this.DOMElements.startBtn.onclick = () => this.Game.startGame();
+      this.DOMElements.uploadBtn.onclick = () => this.DOMElements.csvUpload.click();
+      this.DOMElements.csvUpload.onchange = (e) => this.Listeners.onCsvUpload(e);
+      this.DOMElements.listSelect.onchange = () => this.Listeners.onListSelect();
+      this.DOMElements.deleteListBtn.onclick = () => this.Listeners.onDeleteList();
+      
+      this.DOMElements.difficultyBtns.forEach(btn => {
+          btn.onclick = () => this.Game.setDifficulty(btn.dataset.difficulty);
+      });
+      
+      this.DOMElements.controlButtons.forEach(btn => {
+        if (btn.id === 'repeatBtn') btn.onclick = () => this.Speech.speak(this.state.currentWord);
+        if (btn.id === 'sentenceBtn') btn.onclick = () => handleSentenceClick.call(this, false);
+        if (btn.id === 'anotherSentenceBtn') btn.onclick = () => handleSentenceClick.call(this, true);
+        if (btn.id === 'defBtn') btn.onclick = () => this.Content.speakDefinition();
+        if (btn.id === 'wordListBtn') btn.onclick = () => this.UI.showWordListModal();
+      });
+
+      this.DOMElements.wordListModal.closeBtn.onclick = () => this.DOMElements.wordListModal.overlay.style.display = 'none';
+      this.DOMElements.answer.addEventListener('input', () => this.Listeners.onAnswerInput());
+      this.DOMElements.answer.addEventListener('paste', (e) => this.Listeners.onPaste(e));
+    },
+
+    // --- 5. Modules (Sub-Objects) ---
+    UI: {
+      renderAll() {
+        SpellingBee.UI.renderBest();
+        SpellingBee.UI.renderTopStreak();
+        SpellingBee.UI.renderMissedWordsLog();
+        SpellingBee.UI.renderCustomListsDropdown();
+      },
+      renderScore() {
+        SpellingBee.DOMElements.scoreEl.textContent = SpellingBee.state.score;
+        SpellingBee.DOMElements.streakEl.textContent = SpellingBee.state.streak;
+      },
+      renderBest() {
+        SpellingBee.DOMElements.bestEl.textContent = SpellingBee.state.best[SpellingBee.state.difficulty];
+      },
+      renderTopStreak() {
+        SpellingBee.DOMElements.topStreakEl.textContent = SpellingBee.state.topStreak[SpellingBee.state.difficulty];
+      },
+      renderWordWrongs() {
+        SpellingBee.DOMElements.wordWrongsEl.textContent = SpellingBee.state.wrongTriesCurrent;
+      },
+      renderMissedWordsLog() {
+        const { missedWordsGrid } = SpellingBee.DOMElements;
+        const { missedWords } = SpellingBee.state;
+        missedWordsGrid.innerHTML = '';
+        missedWords.forEach(item => {
+          const wordEl = document.createElement('div');
+          wordEl.textContent = item.revealed ? item.word : '*'.repeat(item.word.length);
+          wordEl.className = 'missed-word-item';
+          wordEl.title = item.revealed ? item.word : 'Spell this word correctly to reveal it';
+          missedWordsGrid.appendChild(wordEl);
+        });
+      },
+      renderWordList() {
+        const { wordListContainer } = SpellingBee.DOMElements.wordListModal;
+        const { words, inactiveWords } = SpellingBee.state;
+        wordListContainer.innerHTML = '';
+        words.forEach(word => {
+            const item = document.createElement('div');
+            item.className = 'word-list-item';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `word-${word}`;
+            checkbox.checked = !inactiveWords.includes(word);
+            checkbox.onchange = () => {
+                if (checkbox.checked) {
+                    SpellingBee.state.inactiveWords = inactiveWords.filter(w => w !== word);
+                } else {
+                    if (!inactiveWords.includes(word)) inactiveWords.push(word);
+                }
+                localStorage.setItem('sb_inactiveWords', JSON.stringify(SpellingBee.state.inactiveWords));
+            };
+
+            const label = document.createElement('label');
+            label.htmlFor = `word-${word}`;
+            label.textContent = word;
+
+            item.appendChild(checkbox);
+            item.appendChild(label);
+            wordListContainer.appendChild(item);
+        });
+      },
+      renderCustomListsDropdown() {
+          const { listSelect } = SpellingBee.DOMElements;
+          const { customLists, activeListName } = SpellingBee.state;
+          listSelect.innerHTML = '';
+          listSelect.add(new Option('Default List', 'Default'));
+          for (const listName in customLists) {
+              listSelect.add(new Option(listName, listName));
+          }
+          listSelect.value = activeListName;
+      },
+      showAlert(message, onConfirm) {
+        const { overlay, message: msgEl, okBtn } = SpellingBee.DOMElements.alertModal;
+        msgEl.textContent = message;
+        overlay.style.display = 'flex';
+        okBtn.onclick = () => {
+          overlay.style.display = 'none';
+          if (onConfirm) onConfirm();
+        };
+        okBtn.focus();
+      },
+      showPrompt(message, defaultValue, onConfirm) {
+        const { overlay, message: msgEl, input, cancelBtn, saveBtn } = SpellingBee.DOMElements.promptModal;
+        msgEl.textContent = message;
+        input.value = defaultValue;
+        overlay.style.display = 'flex';
+        input.focus();
+        input.select();
+        saveBtn.onclick = () => {
+            const value = input.value.trim();
+            if (value) {
+                overlay.style.display = 'none';
+                onConfirm(value);
+            }
+        };
+        cancelBtn.onclick = () => overlay.style.display = 'none';
+      },
+      showWordListModal() {
+        this.renderWordList();
+        SpellingBee.DOMElements.wordListModal.overlay.style.display = 'flex';
+      },
+      setGameActive(isActive) {
+        const { answer, controlButtons, startBtn, difficultyBtns } = SpellingBee.DOMElements;
+        answer.contentEditable = isActive;
+        controlButtons.forEach(btn => btn.disabled = !isActive);
+        difficultyBtns.forEach(btn => btn.disabled = isActive);
+        
+        if (isActive) {
+          answer.focus();
+          startBtn.textContent = 'End Game';
+          startBtn.classList.add('game-active');
+        } else {
+          startBtn.textContent = 'Start ▶';
+          startBtn.classList.remove('game-active');
+          SpellingBee.state.currentWord = '';
+          answer.innerHTML = '';
+        }
+      },
+      renderLiveAnswer(textValue) {
+        const { answer } = SpellingBee.DOMElements;
+        const { currentWord, wrongTriesCurrent, difficulty } = SpellingBee.state;
+        const { hints } = SpellingBee.difficultySettings[difficulty];
+        
+        let html = '';
+        for (let i = 0; i < textValue.length; i++) {
+          const isOk = i < currentWord.length && textValue[i].toLowerCase() === currentWord[i].toLowerCase();
+          html += `<span class="letter-${isOk ? 'ok' : 'bad'}">${textValue[i]}</span>`;
+        }
+        if (wrongTriesCurrent >= 5 && hints) {
+          const remaining = Math.max(0, currentWord.length - textValue.length);
+          if (remaining > 0) html += `<span class="letter-remaining">${'·'.repeat(remaining)}</span>`;
+        }
+        answer.innerHTML = html;
+        
+        const range = document.createRange();
+        const sel = window.getSelection();
+        if (answer.childNodes.length > 0) {
+          range.setStart(answer.lastChild, 1);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      },
+      showPointsAnimation(points) {
+        const { card } = SpellingBee.DOMElements;
+        const pointsEl = document.createElement('div');
+        pointsEl.textContent = `+${points}`;
+        pointsEl.className = 'score-float';
+        card.appendChild(pointsEl);
+        setTimeout(() => { 
+            if(card.contains(pointsEl)) {
+                card.removeChild(pointsEl);
+            }
+        }, 1500);
+      },
+      manageSkullAnimation(start) {
+          const { skullContainer } = SpellingBee.DOMElements;
+          skullContainer.innerHTML = '';
+          if(start) {
+              for (let i = 0; i < 15; i++) {
+                  const skull = document.createElement('div');
+                  skull.className = 'skull';
+                  skull.textContent = '💀';
+                  skull.style.left = `${Math.random() * 100}vw`;
+                  skull.style.animationDuration = `${10 + Math.random() * 10}s`;
+                  skull.style.animationDelay = `${Math.random() * 20}s`;
+                  skull.style.fontSize = `${15 + Math.random() * 20}px`;
+                  skullContainer.appendChild(skull);
+              }
+          }
+      }
+    },
+
+    Audio: {
+      audioCtx: new (window.AudioContext || window.webkitAudioContext)(),
+      async ensureContext() {
+        if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
+      },
+      async beep() {
+        await this.ensureContext();
+        const oscillator = this.audioCtx.createOscillator();
+        const gainNode = this.audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioCtx.destination);
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(220, this.audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.5, this.audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.15);
+        oscillator.start();
+        oscillator.stop(this.audioCtx.currentTime + 0.16);
+      }
+    },
+
+    Speech: {
+      init() {
+        speechSynthesis.onvoiceschanged = () => this.populateVoices();
+        if (!this.populateVoices()) setTimeout(() => this.populateVoices(), 300);
+      },
+      populateVoices() {
+        const { voiceSelect } = SpellingBee.DOMElements;
+        voiceSelect.innerHTML = '';
+        const allVoices = (speechSynthesis.getVoices() || []).filter(v => v.lang.toLowerCase().startsWith('en'));
+        if (!allVoices.length) {
+          voiceSelect.add(new Option('Loading voices…', ''));
+          return false;
+        }
+        const female = ['emma', 'samantha', 'zira', 'tessa', 'catherine', 'google uk english female'];
+        const male = ['daniel', 'alex', 'david', 'tom', 'google us english'];
+        const available = { female: [], male: [] };
+        const added = new Set();
+        allVoices.forEach(voice => {
+          const name = voice.name.toLowerCase();
+          if (added.has(voice.name)) return;
+          if (available.female.length < 4 && female.some(k => name.includes(k))) {
+            available.female.push(voice);
+            added.add(voice.name);
+          } else if (available.male.length < 4 && male.some(k => name.includes(k))) {
+            available.male.push(voice);
+            added.add(voice.name);
+          }
+        });
+        const curated = [...available.female, ...available.male];
+        SpellingBee.state.voicesList = curated.length >= 2 ? curated : allVoices;
+        SpellingBee.state.voicesList.forEach(v => voiceSelect.add(new Option(`${v.name} (${v.lang})`, v.name)));
+        
+        const preferred = ['emma', 'samantha', 'daniel', 'alex'];
+        let found = null;
+        for (const name of preferred) {
+          found = SpellingBee.state.voicesList.find(v => v.name.toLowerCase().includes(name));
+          if (found) break;
+        }
+        voiceSelect.value = found ? found.name : (SpellingBee.state.voicesList[0]?.name || '');
+        return true;
+      },
+      speak(text, onEndCallback) {
+        if (!text || !speechSynthesis) {
+          if(onEndCallback) onEndCallback();
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        const selectedVoice = SpellingBee.state.voicesList.find(v => v.name === SpellingBee.DOMElements.voiceSelect.value);
+        if (selectedVoice) utterance.voice = selectedVoice;
+        if(onEndCallback) utterance.onend = onEndCallback;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
+      },
+      speakSinisterly(text, onEndCallback) {
+          if (!text || !speechSynthesis) {
+              if (onEndCallback) onEndCallback();
+              return;
+          }
+          const utterance = new SpeechSynthesisUtterance(text);
+          const sinisterKeywords = ['david', 'google us english', 'tom', 'alan'];
+          let sinisterVoice = null;
+          for (const keyword of sinisterKeywords) {
+              sinisterVoice = SpellingBee.state.voicesList.find(v => v.name.toLowerCase().includes(keyword));
+              if (sinisterVoice) break;
+          }
+          if (!sinisterVoice) {
+              sinisterVoice = SpellingBee.state.voicesList.find(v => v.gender === 'male') || SpellingBee.state.voicesList[0];
+          }
+          if (sinisterVoice) utterance.voice = sinisterVoice;
+          
+          utterance.pitch = 0.1;
+          utterance.rate = 0.7;
+          
+          if(onEndCallback) utterance.onend = onEndCallback;
+          speechSynthesis.cancel();
+          speechSynthesis.speak(utterance);
+      }
+    },
+
+    Game: {
+      setActiveWordList(listName) {
+        SpellingBee.state.activeListName = listName;
+        localStorage.setItem('sb_activeListName', listName);
+        if (listName === 'Default') {
+            SpellingBee.state.words = SpellingBee.state.defaultWords;
+        } else {
+            SpellingBee.state.words = SpellingBee.state.customLists[listName] || [];
+        }
+      },
+      async startGame() {
+        const { state, UI, Audio } = SpellingBee;
+        if (state.currentWord) {
+          UI.setGameActive(false);
+          return;
+        }
+        
+        if (state.difficulty === 'INSANE') {
+          if (state.missedWords.length === 0) {
+            UI.showAlert("You have no words in your 'Words to Practice' log to unlock INSANE mode.");
+            return;
+          }
+          state.wordsForThisSession = state.missedWords.map(item => item.word);
+        } else {
+          state.wordsForThisSession = state.words.filter(w => !state.inactiveWords.includes(w));
+          if (state.wordsForThisSession.length === 0 && state.words.length > 0) {
+              UI.showAlert("All words are unchecked. Please activate some words in the Word List to play.");
+              return;
+          }
+        }
+
+        await Audio.ensureContext();
+        state.score = 0;
+        state.streak = 0;
+        state.usedWordsThisGame = [];
+        UI.renderScore();
+        UI.setGameActive(true);
+        this.nextWord();
+      },
+      setDifficulty(level) {
+          const { state, UI } = SpellingBee;
+          state.difficulty = level;
+          
+          UI.renderBest();
+          UI.renderTopStreak();
+
+          const { card, difficultyBtns } = SpellingBee.DOMElements;
+          difficultyBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === level));
+          card.className = 'card';
+          card.classList.add(SpellingBee.difficultySettings[level].className);
+          
+          if (level === 'INSANE') {
+              document.body.style.backgroundColor = '#FF0000';
+              state.missedWords.forEach(item => item.revealed = false);
+          } else {
+              document.body.style.backgroundColor = '';
+              state.missedWords.forEach(item => item.revealed = true);
+          }
+          
+          localStorage.setItem('sb_missedWords', JSON.stringify(state.missedWords));
+          UI.renderMissedWordsLog();
+          UI.manageSkullAnimation(level === 'INSANE');
+      },
+      nextWord() {
+        const { state, Speech, UI } = SpellingBee;
+        let available = state.wordsForThisSession.filter(w => !state.usedWordsThisGame.includes(w));
+        if (available.length === 0 && state.wordsForThisSession.length > 0) {
+          state.usedWordsThisGame = [];
+          available = state.wordsForThisSession;
+        }
+        const newWord = available[Math.floor(Math.random() * available.length)];
+        state.currentWord = newWord || state.wordsForThisSession[0] || '';
+        state.usedWordsThisGame.push(state.currentWord);
+        Speech.speak(state.currentWord);
+        SpellingBee.DOMElements.answer.innerHTML = '';
+        SpellingBee.DOMElements.answer.focus();
+        this.resetWordCounters();
+      },
+      resetWordCounters() {
+        SpellingBee.state.wrongTriesCurrent = 0;
+        SpellingBee.UI.renderWordWrongs();
+      },
+      updateBest() {
+        const { difficulty, score, best } = SpellingBee.state;
+        if (score > best[difficulty]) {
+          best[difficulty] = score;
+          localStorage.setItem(`sb_best_${difficulty}`, String(best[difficulty]));
+          SpellingBee.UI.renderBest();
+        }
+      },
+      updateTopStreak() {
+          const { difficulty, streak, topStreak } = SpellingBee.state;
+          if(streak > topStreak[difficulty]) {
+              topStreak[difficulty] = streak;
+              localStorage.setItem(`sb_topStreak_${difficulty}`, String(topStreak[difficulty]));
+              SpellingBee.UI.renderTopStreak();
+          }
+      },
+      updateMissedWordsLog(word) {
+        const { missedWords } = SpellingBee.state;
+        if (!missedWords.some(item => item.word === word)) {
+          missedWords.push({ word: word, revealed: false });
+          if (missedWords.length > 50) missedWords.shift();
+          localStorage.setItem('sb_missedWords', JSON.stringify(missedWords));
+          SpellingBee.UI.renderMissedWordsLog();
+        }
+      },
+      handleCorrectAnswer() {
+        const { state, UI } = SpellingBee;
+        const points = (state.currentWord.length * (state.currentWord.length + 1)) / 2;
+        state.score += points;
+        state.streak++;
+        UI.renderScore();
+        this.updateBest();
+        this.updateTopStreak();
+        UI.showPointsAnimation(points);
+        const missedWordIndex = state.missedWords.findIndex(item => item.word === state.currentWord);
+        if (missedWordIndex > -1) {
+          state.missedWords[missedWordIndex].revealed = true;
+          localStorage.setItem('sb_missedWords', JSON.stringify(state.missedWords));
+          UI.renderMissedWordsLog();
+        }
+        this.nextWord();
+      },
+      handleIncorrectLetter() {
+        const { state, UI, Audio, Speech, difficultySettings } = SpellingBee;
+        Audio.beep();
+        state.streak = 0;
+        UI.renderScore();
+        state.wrongTriesCurrent++;
+        UI.renderWordWrongs();
+        if (state.wrongTriesCurrent === 5 && difficultySettings[state.difficulty].hints) {
+            this.updateMissedWordsLog(state.currentWord);
+        }
+
+        const { answer, startBtn } = SpellingBee.DOMElements;
+        answer.contentEditable = false;
+        setTimeout(() => {
+          answer.innerHTML = '';
+          if (startBtn.classList.contains('game-active')) {
+            answer.contentEditable = true;
+            answer.focus();
+          }
+        }, 1000);
+        
+        const maxWrongTries = difficultySettings[state.difficulty].maxWrongTries;
+        if (state.wrongTriesCurrent >= maxWrongTries) {
+          state.missedWords.forEach(item => item.revealed = true);
+          localStorage.setItem('sb_missedWords', JSON.stringify(state.missedWords));
+          UI.renderMissedWordsLog();
+          UI.setGameActive(false);
+          
+          const showGameOverModal = () => UI.showAlert(`GAME OVER. Your final score was ${state.score}.`, () => this.startGame());
+
+          if (state.difficulty === 'INSANE') {
+              Speech.speakSinisterly("GAME OVER... ha... ha... ha...", showGameOverModal);
+          } else {
+              showGameOverModal();
+          }
+        }
+      },
+    },
+
+    Content: {
+      sentenceCache: {
+        'opaque': ['The frosted glass in the bathroom is opaque for privacy.', "The politician's motives were opaque and difficult to understand."],
+        'squadron': ['A squadron of planes flew in tight formation over the base.', 'The commander addressed the entire squadron before the mission.'],
+        'cauldron': ['The witch stirred the bubbling potion in a large iron cauldron.', 'The story described a bubbling cauldron filled with a green liquid.'],
+        'vacuum': ['I used the vacuum cleaner to remove dust from the rug.', 'Space is a vast, silent vacuum between the stars.'],
+        'amateur': ['The amateur painter entered the local art competition for fun.', 'While only an amateur photographer, her pictures were surprisingly professional.'],
+        'schedule': ['According to the schedule, the bus should arrive in five minutes.', 'Her busy schedule left very little time for relaxation.'],
+        'cemetery': ['They walked through the quiet cemetery to visit their ancestors.', 'The old cemetery was filled with historic gravestones.'],
+        'privilege': ['It is a great privilege to witness such a historic event.', 'Access to clean water should be a right, not a privilege.'],
+        'rhythm': ['The dancer moved to the infectious rhythm of the music.', 'He tapped his foot to the steady rhythm of the drum.']
+      },
+      async getSentence(word, isDifferent) {
+        const w = word.toLowerCase();
+        
+        if (!this.sentenceCache[w]) {
+          const systemPrompt = "You are a sentence generator for a spelling bee. Provide two distinct, concise, real-world sentences (7-15 words) that clearly illustrate the word's meaning. The sentences must not refer to spelling, writing, or defining the word. Respond with a JSON object: {\"sentences\": [\"sentence one\", \"sentence two\"]}";
+          const userQuery = `Generate sentences for the word: "${w}"`;
+          const apiKey = ""; 
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+          const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "OBJECT",
+                    properties: { "sentences": { "type": "ARRAY", "items": { "type": "STRING" } } }
+                }
+            }
+          };
+
+          try {
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) throw new Error('API response not OK');
+            const result = await response.json();
+            const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (jsonText) {
+              const parsed = JSON.parse(jsonText);
+              if (parsed.sentences && parsed.sentences.length >= 2) {
+                this.sentenceCache[w] = parsed.sentences;
+              } else { throw new Error('Invalid JSON structure'); }
+            } else { throw new Error('No text in API response'); }
+          } catch (error) {
+            console.error("Sentence generation error:", error);
+            this.sentenceCache[w] = [`I cannot generate a sentence for ${w}.`, `Please try another word.`];
+          }
+        }
+        
+        const list = this.sentenceCache[w];
+        let sentenceToReturn;
+        if (isDifferent && list.length > 1) {
+            sentenceToReturn = (SpellingBee.state.lastSentence === list[0]) ? list[1] : list[0];
+        } else {
+            sentenceToReturn = list[0];
+        }
+        SpellingBee.state.lastSentence = sentenceToReturn;
+        return sentenceToReturn;
+      },
+      async fetchDefinition(word) {
+        try {
+          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+          if (res.ok) {
+            const data = await res.json();
+            return data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || '';
+          }
+        } catch (err) { console.error('Definition fetch error:', err); }
+        return '';
+      },
+      async speakDefinition() {
+        const { currentWord } = SpellingBee.state;
+        const { Speech, DOMElements } = SpellingBee;
+        if (!currentWord) return;
+        
+        const btn = DOMElements.controlButtons.find(b => b.id === 'defBtn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Loading…';
+        btn.disabled = true;
+
+        let textToSpeak = '';
+        try {
+            const definition = await this.fetchDefinition(currentWord);
+            textToSpeak = definition ? `Definition: ${definition}` : `No definition found.`;
+        } catch(error) {
+            console.error("Definition fetch error:", error);
+            textToSpeak = "I am unable to get the definition at this time.";
+        } finally {
+            Speech.speak(textToSpeak);
+            btn.textContent = originalText;
+            if (DOMElements.startBtn.classList.contains('game-active')) {
+                btn.disabled = false;
+            }
+        }
+      },
+    },
+
+    Listeners: {
+      onAnswerInput() {
+        const { currentWord } = SpellingBee.state;
+        const { Game, UI } = SpellingBee;
+        if (!currentWord) return;
+        
+        const val = (SpellingBee.DOMElements.answer.textContent || '').replace(/·/g, '');
+        if (val.length > currentWord.length) {
+          Game.handleIncorrectLetter();
+          return;
+        }
+        let isWrong = false;
+        for (let i = 0; i < val.length; i++) {
+          if (val[i].toLowerCase() !== currentWord[i].toLowerCase()) {
+            isWrong = true;
+            break;
+          }
+        }
+        UI.renderLiveAnswer(val);
+        if (isWrong) {
+          Game.handleIncorrectLetter();
+        } else if (val.toLowerCase() === currentWord.toLowerCase()) {
+          Game.handleCorrectAnswer();
+        }
+      },
+      onPaste(e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+      },
+      onCsvUpload(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        file.text().then(text => {
+          const rows = text.replace(/\r/g, '').split('\n').map(t => t.trim()).filter(Boolean);
+          if (!rows.length) return SpellingBee.UI.showAlert('No words found in CSV.');
+          const hasHeader = /word|term/i.test(rows[0]);
+          const data = hasHeader ? rows.slice(1) : rows;
+          const parsed = data.map(line => line.split(',')[0].replace(/^"|"$/g, '').trim()).filter(Boolean);
+          
+          if (parsed.length) {
+            SpellingBee.UI.showPrompt("Please enter a name for this word list:", file.name.replace(/\.csv$/i, '') || "My Custom List", (listName) => {
+              SpellingBee.state.customLists[listName] = parsed;
+              localStorage.setItem('sb_customLists', JSON.stringify(SpellingBee.state.customLists));
+              SpellingBee.UI.renderCustomListsDropdown();
+              SpellingBee.Game.setActiveWordList(listName);
+              SpellingBee.DOMElements.listSelect.value = listName;
+              SpellingBee.UI.showAlert(`Saved and activated list: "${listName}" with ${parsed.length} words.`);
+            });
+          } else {
+            SpellingBee.UI.showAlert('Could not parse any words from CSV.');
+          }
+        }).catch(() => SpellingBee.UI.showAlert('Error reading file.'));
+      },
+      onListSelect() {
+          const selectedList = SpellingBee.DOMElements.listSelect.value;
+          const confirmChange = () => {
+              SpellingBee.Game.setActiveWordList(selectedList);
+              SpellingBee.UI.setGameActive(false);
+          };
+          if (SpellingBee.state.currentWord) {
+              SpellingBee.UI.showAlert("Changing lists will end your current game. Continue?", confirmChange);
+          } else {
+              confirmChange();
+          }
+      },
+      onDeleteList() {
+          const selectedList = SpellingBee.DOMElements.listSelect.value;
+          const { UI, Game } = SpellingBee;
+          if (selectedList === 'Default') {
+              return UI.showAlert("The Default list cannot be deleted.");
+          }
+          const confirmDelete = () => {
+              delete SpellingBee.state.customLists[selectedList];
+              localStorage.setItem('sb_customLists', JSON.stringify(SpellingBee.state.customLists));
+              Game.setActiveWordList('Default');
+              UI.renderCustomListsDropdown();
+          };
+          UI.showAlert(`Are you sure you want to delete the list "${selectedList}"?`, confirmDelete);
+      },
+    }
+  };
+
+  SpellingBee.init();
+});
+</script>
+</body>
+</html>
+
