@@ -1,0 +1,3445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spelling Bee — v10.3 (Fully Self-Contained)</title>
+    <style>
+        /* CSS is kept here for simplicity, but should ideally be in style.css */
+        :root {
+            --bg-primary: #0f172a; --bg-secondary: #111827; --bg-tertiary: #1f2937;
+            --border-color: #374151; --text-primary: #e5e7eb; --text-secondary: #9ca3af;
+            --text-placeholder: #6b7280; --accent-green: #22c55e; --accent-green-hover: #16a34a;
+            --accent-green-ok: #4ade80; --accent-red: #ef4444; --accent-red-hover: #dc2626;
+            --accent-blue: #3b82f6; --accent-blue-hover: #2563eb; --accent-yellow: #facc15;
+            --bg-easy: #111827; /* Dark Blue-Gray */
+            --bg-normal: #064e3b; /* Dark Green */
+            --bg-hard: #7f1d1d; /* Dark Red */
+            --bg-insane: #000; /* Black */
+        }
+        body {
+            background: var(--bg-primary); color: var(--text-primary);
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+            margin: 0; padding: 10px; display: flex; justify-content: center;
+            align-items: center; min-height: 100vh; box-sizing: border-box;
+            overflow: hidden; transition: background-color 0.5s ease;
+        }
+        .card {
+            background: var(--bg-secondary); border: 1px solid var(--border-color);
+            border-radius: 12px; padding: 20px; width: 100%; max-width: 780px; margin: auto;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            position: relative; z-index: 10; transition: background-color 0.5s ease;
+        }
+        .difficulty-easy { background-color: var(--bg-easy); }
+        .difficulty-normal { background-color: var(--bg-normal); }
+        .difficulty-hard { background-color: var(--bg-hard); }
+        .difficulty-insane { background-color: var(--bg-insane); }
+
+        h1 { margin-top: 0; text-align: center; color: var(--text-primary); }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+        #csvUpload { display: none; }
+        #uploadBtn { background-color: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+        #uploadBtn:hover { background-color: var(--accent-blue-hover); }
+
+        input, select, button {
+            background: var(--bg-tertiary); border: 1px solid var(--border-color);
+            color: var(--text-primary); border-radius: 8px; padding: 10px; font-size: 14px;
+            transition: background-color 0.2s, border-color 0.2s; box-sizing: border-box; height: 42px;
+        }
+        button { cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        button:hover { background-color: var(--border-color); }
+        button:disabled, button:disabled:hover { opacity: 0.5; cursor: not-allowed; background-color: var(--bg-tertiary); }
+        
+        .difficulty-controls { justify-content: center; }
+        /* LAYOUT FIX 1: Difficulty buttons to span 25% each */
+        .difficulty-btn { flex-grow: 1; background-color: var(--bg-tertiary); width: calc(25% - 6px); }
+        
+        .difficulty-btn.active { border-color: var(--accent-yellow); color: var(--accent-yellow); box-shadow: 0 0 10px rgba(250, 204, 21, 0.5); }
+        
+        #answer {
+            width: 100%; height: auto; aspect-ratio: 1 / 0.15; display: flex; align-items: center;
+            justify-content: center; margin: 0 0 12px; box-sizing: border-box; font-size: 72px;
+            padding: 12px; background: var(--bg-primary); border: 1px solid var(--border-color);
+            /* FIX: Hide the native caret */
+            caret-color: transparent !important;
+        }
+        #answer:focus { outline: none; border-color: var(--accent-blue); }
+        #answer:empty:not(:focus)::before { content: attr(data-placeholder); color: var(--text-placeholder); }
+        
+        #startBtn { background: var(--accent-green); color: #fff; font-weight: bold; border: none; }
+        #startBtn.game-active { background: var(--accent-red); }
+        #startBtn:hover { background: var(--accent-green-hover); }
+        #startBtn.game-active:hover { background: var(--accent-red-hover); }
+        .controls-row button { flex-grow: 1; flex-basis: 0; }
+        
+        .list-management-row { flex-wrap: nowrap; }
+        /* LAYOUT FIX 2: Custom widths for list management elements (1/6, 2/6, 2/6, 1/6) */
+        .list-management-row > #uploadBtn, .list-management-row > #deleteListBtn {
+            width: calc(16.666% - 6px); /* 1/6th width (16.666%) */
+            flex-grow: 0;
+            flex-shrink: 0;
+            flex-basis: auto;
+        }
+        .list-management-row > #listSelect, .list-management-row > #voiceSelect {
+            width: calc(33.333% - 6px); /* 2/6th width (33.333%) */
+            flex-grow: 0;
+            flex-shrink: 0;
+            flex-basis: auto;
+        }
+
+        .letter-ok { color: var(--accent-green-ok); }
+        .letter-bad { color: var(--accent-red); }
+        .letter-remaining { color: var(--text-secondary); opacity: 0.8; }
+        .stat {
+            background: var(--bg-tertiary); border: 1px solid var(--border-color);
+            border-radius: 8px; padding: 10px; margin-top: 8px; text-align: center;
+        }
+        #progressionStatus { color: var(--accent-yellow); }
+        .missed-words-container {
+            margin-top: 12px; padding: 10px; background: var(--bg-tertiary);
+            border: 1px solid var(--border-color); border-radius: 8px;
+        }
+        .missed-words-container h2 {
+            margin-top: 0; margin-bottom: 10px; font-size: 16px; text-align: center;
+            color: var(--text-secondary); font-weight: normal;
+        }
+        .missed-words-grid {
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+            color: var(--accent-yellow); font-family: monospace; font-size: 14px;
+        }
+        .missed-word-item {
+            text-align: center; background: var(--bg-primary); padding: 5px;
+            border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+        #answer:focus:empty::after {
+            content: ''; display: inline-block; width: 4px; height: 60px;
+            background-color: var(--text-primary); animation: blink 1.2s infinite step-end;
+        }
+        @keyframes floatUp { to { opacity: 0; transform: translate(-50%, -60px); } }
+        .score-float {
+            position: absolute; bottom: 85px; left: 50%; transform: translateX(-50%);
+            font-size: 53px; font-weight: bold; color: var(--accent-green-ok);
+            pointer-events: none; animation: floatUp 1.5s ease-out forwards;
+        }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); display: flex; justify-content: center;
+            align-items: center; z-index: 1000;
+        }
+        .modal-content {
+            background: var(--bg-tertiary); color: var(--text-primary); padding: 20px;
+            border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            display: flex; flex-direction: column;
+        }
+        .modal-content p { margin: 0 0 20px 0; }
+        .modal-content button {
+            background: var(--accent-blue); color: #fff; border: none; padding: 10px 20px;
+            border-radius: 5px; cursor: pointer;
+        }
+        .prompt-input {
+            background: var(--bg-primary); border: 1px solid var(--border-color);
+            color: var(--text-primary); border-radius: 4px; padding: 10px; font-size: 16px;
+            width: 100%; box-sizing: border-box; margin-bottom: 20px;
+        }
+        .prompt-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+        .prompt-buttons .cancel-btn { background-color: var(--bg-tertiary); }
+        .word-list-modal { width: 90%; max-width: 500px; }
+        .word-list-container {
+            max-height: 50vh; overflow-y: auto; text-align: left; margin-bottom: 20px;
+            padding: 10px; background: var(--bg-primary); border-radius: 4px;
+        }
+        .word-list-item { display: flex; align-items: center; padding: 6px; font-size: 16px; }
+        .word-list-item:nth-child(odd) { background-color: rgba(255,255,255,0.05); }
+        .word-list-item input { margin-right: 12px; width: 18px; height: 18px; }
+        .word-list-item label { flex-grow: 1; cursor: pointer; }
+        #skull-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; pointer-events: none; overflow: hidden;
+        }
+        .skull {
+            position: absolute; color: #000; font-size: 100px; /* Increased skull size */
+            opacity: 1; animation: float-skull 20s linear infinite;
+        }
+        @keyframes float-skull {
+            0% { transform: translateY(100vh) rotate(0deg); }
+            100% { transform: translateY(-100px) rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+<div id="skull-container"></div>
+<div class="card" id="game-card">
+    <h1>Spelling Bee</h1>
+    <div class="row difficulty-controls">
+        <button class="difficulty-btn active" data-difficulty="EASY">EASY</button>
+        <button class="difficulty-btn" data-difficulty="NORMAL">NORMAL</button>
+        <button class="difficulty-btn" data-difficulty="HARD">HARD</button>
+        <button class="difficulty-btn" data-difficulty="INSANE">INSANE</button>
+    </div>
+    <div class="row list-management-row">
+        <button id="uploadBtn">Upload CSV</button>
+        <select id="listSelect"></select>
+        <select id="voiceSelect"></select>
+        <button id="deleteListBtn" title="Delete Selected List">🗑️</button>
+        <input type="file" id="csvUpload" accept=".csv" title="Upload a custom word list">
+    </div>
+    <div class="row controls-row">
+        <button id="startBtn">Start ▶</button>
+        <button id="repeatBtn">Repeat</button>
+        <button id="sentenceBtn">Use it in a Sentence</button>
+        <button id="anotherSentenceBtn">Another Sentence</button>
+        <button id="defBtn">Definition</button>
+        <button id="wordListBtn">Word List</button>
+    </div>
+    <div id="answer" data-placeholder="Type word here" contenteditable="true" spellcheck="false" autocapitalize="none" autocomplete="off"></div>
+    <div class="stat">
+        Score: <span id="score">0</span> | Best: <span id="best">0</span> | Streak: <span id="streak">0</span> | Top Streak: <span id="topStreak">0</span>
+    </div>
+    <div class="stat">Wrong letters this word: <span id="wordWrongs">0</span></div>
+    <div id="progressionStatus" class="stat"></div>
+    <div id="missedWordsLog" class="missed-words-container">
+        <h2>Words to Practice</h2>
+        <div id="missedWordsGrid" class="missed-words-grid"></div>
+    </div>
+</div>
+<!-- Modals -->
+<div id="modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <p id="modalMessage"></p>
+        <button id="modalOkBtn">OK</button>
+    </div>
+</div>
+<div id="promptModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <p id="promptMessage"></p>
+        <input type="text" id="promptInput" class="prompt-input" />
+        <div class="prompt-buttons">
+            <button id="promptCancelBtn" class="cancel-btn">Cancel</button>
+            <button id="promptSaveBtn">Save</button>
+        </div>
+    </div>
+</div>
+<div id="wordListModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content word-list-modal">
+        <h2>Active Word List</h2>
+        <p style="font-size: 14px; color: var(--text-secondary)">Uncheck words to exclude them from the game (except on INSANE mode).</p>
+        <div id="wordListContainer" class="word-list-container"></div>
+        <button id="wordListCloseBtn">Close</button>
+    </div>
+</div>
+
+<script>
+// =========================================================================
+// Refactored JavaScript using ES6 Classes
+// =========================================================================
+
+/**
+ * Utility class for managing DOM element references.
+ */
+class DOM {
+    constructor() {
+        this.card = document.getElementById('game-card');
+        this.skullContainer = document.getElementById('skull-container');
+        this.startBtn = document.getElementById('startBtn');
+        this.uploadBtn = document.getElementById('uploadBtn');
+        this.deleteListBtn = document.getElementById('deleteListBtn');
+        this.listSelect = document.getElementById('listSelect');
+        this.csvUpload = document.getElementById('csvUpload');
+        this.voiceSelect = document.getElementById('voiceSelect');
+        this.answer = document.getElementById('answer');
+        this.scoreEl = document.getElementById('score');
+        this.bestEl = document.getElementById('best');
+        this.streakEl = document.getElementById('streak');
+        this.topStreakEl = document.getElementById('topStreak');
+        this.wordWrongsEl = document.getElementById('wordWrongs');
+        this.missedWordsGrid = document.getElementById('missedWordsGrid');
+        this.progressionStatus = document.getElementById('progressionStatus');
+        
+        // Assigned individual control buttons
+        this.repeatBtn = document.getElementById('repeatBtn');
+        this.sentenceBtn = document.getElementById('sentenceBtn');
+        this.anotherSentenceBtn = document.getElementById('anotherSentenceBtn');
+        this.defBtn = document.getElementById('defBtn');
+        this.wordListBtn = document.getElementById('wordListBtn');
+
+        this.alertModal = {
+            overlay: document.getElementById('modal'),
+            message: document.getElementById('modalMessage'),
+            okBtn: document.getElementById('modalOkBtn'),
+        };
+        this.promptModal = {
+            overlay: document.getElementById('promptModal'),
+            message: document.getElementById('promptMessage'),
+            input: document.getElementById('promptInput'),
+            cancelBtn: document.getElementById('promptCancelBtn'),
+            saveBtn: document.getElementById('promptSaveBtn'),
+        };
+        this.wordListModal = {
+            overlay: document.getElementById('wordListModal'),
+            container: document.getElementById('wordListContainer'),
+            closeBtn: document.getElementById('wordListCloseBtn'),
+        };
+        this.difficultyBtns = document.querySelectorAll('.difficulty-btn');
+        // This array is used in UI.setGameActive to disable/enable controls.
+        this.controlButtons = [
+            this.repeatBtn, 
+            this.sentenceBtn, 
+            this.anotherSentenceBtn, 
+            this.defBtn, 
+            this.wordListBtn
+        ];
+    }
+}
+
+/**
+ * Manages the User Interface, rendering, and modal interactions.
+ */
+class UI {
+    constructor(app) {
+        this.app = app;
+        this.DOMElements = app.DOMElements;
+    }
+
+    renderAll() {
+        this.renderBest();
+        this.renderTopStreak();
+        this.renderMissedWordsLog();
+        this.renderCustomListsDropdown();
+        this.renderProgressionStatus();
+    }
+    
+    // UI Rendering Methods
+    renderScore() {
+        const { score, streak } = this.app.state;
+        this.DOMElements.scoreEl.textContent = score;
+        this.DOMElements.streakEl.textContent = streak;
+    }
+    renderBest() {
+        const { difficulty, best } = this.app.state;
+        this.DOMElements.bestEl.textContent = best[difficulty];
+    }
+    renderTopStreak() {
+        const { difficulty, topStreak } = this.app.state;
+        this.DOMElements.topStreakEl.textContent = topStreak[difficulty];
+    }
+    renderWordWrongs() {
+        this.DOMElements.wordWrongsEl.textContent = this.app.state.wrongTriesCurrent;
+    }
+    renderProgressionStatus() {
+        const { progressionStatus } = this.DOMElements;
+        const { difficulty, correctWordsThisLevel } = this.app.state;
+        const { progressionOrder } = this.app;
+        
+        const currentIndex = progressionOrder.indexOf(difficulty);
+        if (currentIndex < progressionOrder.length - 1) {
+            const nextLevel = progressionOrder[currentIndex + 1];
+            const remaining = Math.max(0, 20 - correctWordsThisLevel);
+            progressionStatus.innerHTML = `<strong>${remaining}</strong> correct word${remaining !== 1 ? 's' : ''} until <strong>${nextLevel}</strong> level`;
+            progressionStatus.style.display = 'block';
+        } else {
+            progressionStatus.style.display = 'none';
+        }
+    }
+    renderMissedWordsLog() {
+        const { missedWordsGrid } = this.DOMElements;
+        const { missedWords } = this.app.state;
+        missedWordsGrid.innerHTML = '';
+        
+        missedWords.slice(0, 50).forEach(item => { // Limit to 50
+            const wordEl = document.createElement('div');
+            const displayWord = item.revealed ? item.word : '*'.repeat(item.word.length);
+            wordEl.textContent = displayWord;
+            wordEl.className = 'missed-word-item';
+            wordEl.title = item.revealed ? item.word : 'Spell this word correctly to reveal it';
+            missedWordsGrid.appendChild(wordEl);
+        });
+    }
+    renderCustomListsDropdown() {
+        const { listSelect } = this.DOMElements;
+        const { customLists, activeListName, defaultLists } = this.app.state;
+        listSelect.innerHTML = '';
+        
+        // Add all built-in default lists
+        for (const listName in defaultLists) {
+            listSelect.add(new Option(listName, listName));
+        }
+
+        // Add custom lists
+        for (const listName in customLists) {
+            listSelect.add(new Option(listName, listName));
+        }
+        listSelect.value = activeListName;
+    }
+
+    // Dynamic UI Methods
+    setGameActive(isActive) {
+        const { answer, controlButtons, startBtn, difficultyBtns } = this.DOMElements;
+        answer.contentEditable = isActive;
+        controlButtons.forEach(btn => btn.disabled = !isActive);
+        difficultyBtns.forEach(btn => btn.disabled = isActive);
+        
+        if (isActive) {
+            answer.focus();
+            startBtn.textContent = 'End Game';
+            startBtn.classList.add('game-active');
+        } else {
+            startBtn.textContent = 'Start ▶';
+            startBtn.classList.remove('game-active');
+            this.app.state.currentWord = '';
+            answer.innerHTML = '';
+        }
+    }
+
+    setDifficultyUI(level) {
+        const { card, difficultyBtns } = this.DOMElements;
+        const className = this.app.difficultySettings[level].className;
+        
+        difficultyBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.difficulty === level));
+        
+        card.className = 'card';
+        card.classList.add(className);
+
+        document.body.style.backgroundColor = (level === 'INSANE' ? '#FF0000' : '');
+    }
+
+    renderLiveAnswer(textValue) {
+        const { answer } = this.DOMElements;
+        const { currentWord, wrongTriesCurrent, difficulty } = this.app.state;
+        const { hints } = this.app.difficultySettings[difficulty];
+        
+        let html = '';
+        for (let i = 0; i < textValue.length; i++) {
+            const isOk = i < currentWord.length && textValue[i].toLowerCase() === currentWord[i].toLowerCase();
+            // Use non-breaking space for the last letter to help iOS keyboard flow
+            const char = (i === textValue.length - 1) ? textValue[i] : textValue[i];
+            html += `<span class="letter-${isOk ? 'ok' : 'bad'}">${char}</span>`;
+        }
+
+        // Hint for remaining letters
+        if (wrongTriesCurrent >= 5 && hints) {
+            const remaining = Math.max(0, currentWord.length - textValue.length);
+            if (remaining > 0) html += `<span class="letter-remaining">${'·'.repeat(remaining)}</span>`;
+        }
+        
+        answer.innerHTML = html;
+        this.setCaretPosition(answer, textValue.length);
+    }
+    
+    // Utility to set cursor position at the end of contenteditable content
+    setCaretPosition(el, offset) {
+        const range = document.createRange();
+        const sel = window.getSelection();
+        
+        // This simplified logic is more reliable on iOS/Safari than complex node traversal.
+        range.selectNodeContents(el);
+        range.collapse(false); // Collapse to the end
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    showPointsAnimation(points) {
+        const pointsEl = document.createElement('div');
+        pointsEl.textContent = `+${points}`;
+        pointsEl.className = 'score-float';
+        this.DOMElements.card.appendChild(pointsEl);
+        setTimeout(() => {
+            if(this.DOMElements.card.contains(pointsEl)) {
+                this.DOMElements.card.removeChild(pointsEl);
+            }
+        }, 1500);
+    }
+    
+    // Modal Methods
+    showAlert(message, onConfirm) {
+        const { overlay, message: msgEl, okBtn } = this.DOMElements.alertModal;
+        msgEl.textContent = message;
+        overlay.style.display = 'flex';
+        okBtn.onclick = () => {
+            overlay.style.display = 'none';
+            if (onConfirm) onConfirm();
+        };
+        okBtn.focus();
+    }
+
+    showPrompt(message, defaultValue, onConfirm) {
+        const { overlay, message: msgEl, input, cancelBtn, saveBtn } = this.DOMElements.promptModal;
+        
+        const resetAndHide = () => overlay.style.display = 'none';
+
+        msgEl.textContent = message;
+        input.value = defaultValue;
+        overlay.style.display = 'flex';
+        input.focus();
+        input.select();
+        
+        saveBtn.onclick = () => {
+            const value = input.value.trim();
+            if (value) {
+                resetAndHide();
+                onConfirm(value);
+            }
+        };
+        cancelBtn.onclick = resetAndHide;
+    }
+    
+    showWordListModal() {
+        this.renderWordList();
+        this.DOMElements.wordListModal.overlay.style.display = 'flex';
+    }
+
+    renderWordList() {
+        const { wordListContainer } = this.DOMElements.wordListModal;
+        const { words, inactiveWords } = this.app.state;
+        wordListContainer.innerHTML = '';
+        
+        words.forEach(word => {
+            const item = document.createElement('div');
+            item.className = 'word-list-item';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `word-${word}`;
+            checkbox.checked = !inactiveWords.includes(word);
+            
+            checkbox.onchange = () => this.app.GameLogic.toggleWordActive(word, checkbox.checked);
+
+            const label = document.createElement('label');
+            label.htmlFor = `word-${word}`;
+            label.textContent = word;
+
+            item.appendChild(checkbox);
+            item.appendChild(label);
+            wordListContainer.appendChild(item);
+        });
+    }
+
+    manageSkullAnimation(start) {
+        const { skullContainer } = this.DOMElements;
+        skullContainer.innerHTML = '';
+        if(start) {
+            for (let i = 0; i < 15; i++) {
+                const skull = document.createElement('div');
+                skull.className = 'skull';
+                skull.textContent = '💀';
+                skull.style.left = `${Math.random() * 100}vw`;
+                skull.style.animationDuration = `${10 + Math.random() * 10}s`;
+                skull.style.animationDelay = `${Math.random() * 20}s`;
+                skullContainer.appendChild(skull);
+            }
+        }
+    }
+}
+
+/**
+ * Manages game state, word selection, scoring, and difficulty progression.
+ */
+class GameLogic {
+    constructor(app) {
+        this.app = app;
+    }
+
+    setActiveWordList(listName) {
+        const { state } = this.app;
+        state.activeListName = listName;
+        localStorage.setItem('sb_activeListName', listName);
+        
+        // Check if the list name exists in the default lists or custom lists
+        if (state.defaultLists[listName]) {
+            state.words = state.defaultLists[listName]; // Load from defaultLists object
+        } else {
+            state.words = state.customLists[listName] || [];
+        }
+
+        // Clear inactive words that no longer exist in the new list
+        state.inactiveWords = state.inactiveWords.filter(w => state.words.includes(w));
+        localStorage.setItem('sb_inactiveWords', JSON.stringify(state.inactiveWords));
+    }
+    
+    toggleWordActive(word, isActive) {
+        const { state } = this.app;
+        if (isActive) {
+            state.inactiveWords = state.inactiveWords.filter(w => w !== word);
+        } else {
+            if (!state.inactiveWords.includes(word)) state.inactiveWords.push(word);
+        }
+        localStorage.setItem('sb_inactiveWords', JSON.stringify(state.inactiveWords));
+    }
+
+    async startGame() {
+        const { state, UI, Audio, Speech } = this.app;
+        
+        // FIX APPLIED: Speech.init() is now in SpellingBeeApp.init() for immediate dropdown population.
+        // We ensure it runs once here just in case the browser needs the user interaction.
+        Speech.init(); 
+
+        if (state.currentWord) {
+            UI.setGameActive(false);
+            return;
+        }
+        
+        // Prepare word list based on difficulty
+        if (state.difficulty === 'INSANE') {
+            const availableWords = state.missedWords.map(item => item.word);
+            if (availableWords.length === 0) {
+                UI.showAlert("You need words in your 'Words to Practice' log to unlock INSANE mode.");
+                return;
+            }
+            state.wordsForThisSession = availableWords;
+        } else {
+            state.wordsForThisSession = state.words.filter(w => !state.inactiveWords.includes(w));
+            if (state.wordsForThisSession.length === 0 && state.words.length > 0) {
+                UI.showAlert("All words are unchecked. Please activate some words in the Word List to play.");
+                return;
+            }
+        }
+        
+        // Reset game stats
+        await Audio.ensureContext();
+        state.score = 0;
+        state.streak = 0;
+        state.usedWordsThisGame = [];
+        state.correctWordsThisLevel = 0;
+        UI.renderScore();
+        UI.renderProgressionStatus();
+        
+        UI.setGameActive(true);
+        this.nextWord();
+    }
+    
+    setDifficulty(level) {
+        const { state, UI } = this.app;
+        state.difficulty = level;
+        
+        UI.setDifficultyUI(level);
+        
+        // INSANE mode logic
+        const shouldReveal = level !== 'INSANE';
+        state.missedWords.forEach(item => item.revealed = shouldReveal);
+        localStorage.setItem('sb_missedWords', JSON.stringify(state.missedWords));
+
+        UI.renderBest();
+        UI.renderTopStreak();
+        UI.renderMissedWordsLog();
+        UI.manageSkullAnimation(level === 'INSANE');
+        UI.renderProgressionStatus();
+    }
+    
+    nextWord() {
+        const { state, Speech, UI } = this.app;
+        let available = state.wordsForThisSession.filter(w => !state.usedWordsThisGame.includes(w));
+        
+        if (available.length === 0 && state.wordsForThisSession.length > 0) {
+            state.usedWordsThisGame = [];
+            available = state.wordsForThisSession;
+        }
+        
+        if (available.length === 0) {
+             UI.showAlert("Word list exhausted. Game over!", () => UI.setGameActive(false));
+             return;
+        }
+        
+        const newWord = available[Math.floor(Math.random() * available.length)];
+        state.currentWord = newWord;
+        state.usedWordsThisGame.push(state.currentWord);
+        
+        Speech.speak(state.currentWord);
+        this.resetWordCounters();
+        
+        this.app.DOMElements.answer.innerHTML = '';
+        this.app.DOMElements.answer.focus();
+    }
+
+    resetWordCounters() {
+        this.app.state.wrongTriesCurrent = 0;
+        this.app.UI.renderWordWrongs();
+    }
+    
+    updateScoreAndStreak(isCorrect, completedWord) { 
+        const { state, UI } = this.app;
+        const { difficulty } = state;
+
+        if (isCorrect) {
+            state.correctWordsThisLevel++;
+            
+            // Use completedWord for length calculation for safety
+            const word = completedWord || state.currentWord;
+            if (!word) {
+                console.error("Scoring failed: Missing completed word.");
+                return;
+            }
+
+            const points = (word.length * (word.length + 1)) / 2;
+            state.score += points;
+            state.streak++;
+            UI.showPointsAnimation(points);
+        } else {
+            state.streak = 0;
+        }
+        
+        // Update high scores
+        if (state.score > state.best[difficulty]) {
+            state.best[difficulty] = state.score;
+            localStorage.setItem(`sb_best_${difficulty}`, String(state.best[difficulty]));
+            UI.renderBest();
+        }
+        if(state.streak > state.topStreak[difficulty]) {
+            state.topStreak[difficulty] = state.streak;
+            localStorage.setItem(`sb_topStreak_${difficulty}`, String(state.topStreak[difficulty]));
+            UI.renderTopStreak();
+        }
+        
+        UI.renderScore();
+    }
+    
+    updateMissedWordsLog(word, revealed) {
+        const { missedWords } = this.app.state;
+        let item = missedWords.find(item => item.word === word);
+
+        if (!item) {
+            item = { word: word, revealed: revealed };
+            missedWords.push(item);
+            if (missedWords.length > 50) missedWords.shift(); // Keep max 50
+        } else {
+            item.revealed = revealed;
+        }
+        
+        localStorage.setItem('sb_missedWords', JSON.stringify(missedWords));
+        this.app.UI.renderMissedWordsLog();
+    }
+
+    handleCorrectAnswer(completedWord) { 
+        const { progressionOrder, UI } = this.app;
+        const { state } = this.app; 
+        
+        // Use the explicit word passed from the event handler
+        const word = completedWord || state.currentWord;
+        if (!word) {
+            console.error("Cannot process correct answer: word is missing.");
+            return;
+        }
+
+        this.updateScoreAndStreak(true, word); 
+        this.updateMissedWordsLog(word, true); 
+        
+        // Difficulty progression check
+        if (state.correctWordsThisLevel >= 20) {
+            const currentIndex = progressionOrder.indexOf(state.difficulty);
+            if (currentIndex < progressionOrder.length - 1) {
+                const nextLevel = progressionOrder[currentIndex + 1];
+                this.setDifficulty(nextLevel);
+                state.correctWordsThisLevel = 0;
+                UI.showAlert(`Level Up! You've reached ${nextLevel} difficulty.`);
+            }
+        }
+        
+        UI.renderProgressionStatus();
+        this.nextWord();
+    }
+
+    handleIncorrectLetter() {
+        const { state, UI, Audio, Speech, difficultySettings } = this.app;
+        const { answer, startBtn } = this.app.DOMElements;
+        
+        Audio.beep();
+        this.updateScoreAndStreak(false); 
+        state.wrongTriesCurrent++;
+        UI.renderWordWrongs();
+
+        const { maxWrongTries, hints } = difficultySettings[state.difficulty];
+
+        if (state.wrongTriesCurrent >= 5 && hints) {
+            this.updateMissedWordsLog(state.currentWord, false); 
+        }
+        
+        // Briefly disable input on wrong letter
+        answer.contentEditable = false;
+        setTimeout(() => {
+            answer.innerHTML = '';
+            if (startBtn.classList.contains('game-active')) {
+                answer.contentEditable = true;
+                answer.focus();
+            }
+        }, 1000);
+        
+        // Game Over condition
+        if (state.wrongTriesCurrent >= maxWrongTries) {
+            state.missedWords.forEach(item => item.revealed = true);
+            localStorage.setItem('sb_missedWords', JSON.stringify(state.missedWords));
+            UI.renderMissedWordsLog();
+            UI.setGameActive(false);
+            
+            const showGameOverModal = () => UI.showAlert(`GAME OVER. Your final score was ${state.score}.`, () => this.startGame());
+
+            if (state.difficulty === 'INSANE') {
+                Speech.speakSinisterly("GAME OVER... ha... ha... ha...", showGameOverModal);
+            } else {
+                showGameOverModal();
+            }
+        }
+    }
+}
+
+/**
+ * Manages Speech Synthesis (TTS) functionality.
+ */
+class SpeechEngine {
+    constructor(app) {
+        this.app = app;
+        // isVoicePopulated flag now ensures population runs only once
+        this.isVoicePopulated = false;
+    }
+
+    init() {
+        // Only run population if not already done.
+        if (this.isVoicePopulated) return;
+
+        if ('speechSynthesis' in window) {
+            // Safari sometimes delays voice loading, so we use the event and a fallback timer.
+            speechSynthesis.onvoiceschanged = () => this.populateVoices();
+            this.populateVoices();
+        } else {
+             this.app.DOMElements.voiceSelect.add(new Option('TTS Not Supported', ''));
+        }
+    }
+    
+    populateVoices() {
+        if (this.isVoicePopulated) return true;
+        
+        const { voiceSelect } = this.app.DOMElements;
+        const allVoices = (speechSynthesis.getVoices() || []).filter(v => v.lang.toLowerCase().startsWith('en'));
+        
+        if (!allVoices.length) {
+            if (voiceSelect.options.length === 0) {
+                 voiceSelect.add(new Option('Loading voices…', ''));
+            }
+            return false;
+        }
+
+        voiceSelect.innerHTML = '';
+        const preferredNames = { female: ['emma', 'samantha', 'zira', 'tessa', 'google uk english female'], male: ['daniel', 'alex', 'david', 'tom', 'google us english'] };
+        const curated = [];
+        const addedNames = new Set();
+        
+        for (const gender in preferredNames) {
+            for (const keyword of preferredNames[gender]) {
+                const voice = allVoices.find(v => v.name.toLowerCase().includes(keyword) && !addedNames.has(v.name));
+                if (voice) {
+                    curated.push(voice);
+                    addedNames.add(voice.name);
+                    if (curated.length >= 8) break;
+                }
+            }
+            if (curated.length >= 8) break;
+        }
+
+        this.app.state.voicesList = curated.length > 0 ? curated : allVoices;
+        this.app.state.voicesList.forEach(v => voiceSelect.add(new Option(`${v.name} (${v.lang})`, v.name)));
+        
+        const defaultVoice = this.app.state.voicesList.find(v => v.name.toLowerCase().includes('samantha') || v.name.toLowerCase().includes('zira')) || this.app.state.voicesList[0];
+        voiceSelect.value = defaultVoice?.name || '';
+        
+        this.isVoicePopulated = true;
+        return true;
+    }
+    
+    getVoice(isSinister = false) {
+        const { voicesList } = this.app.state;
+        const selectedVoiceName = this.app.DOMElements.voiceSelect.value;
+        
+        if (isSinister) {
+            const sinisterKeywords = ['david', 'google us english', 'tom', 'alan', 'male'];
+            for (const keyword of sinisterKeywords) {
+                const voice = voicesList.find(v => v.name.toLowerCase().includes(keyword));
+                if (voice) return voice;
+            }
+        }
+        
+        return voicesList.find(v => v.name === selectedVoiceName);
+    }
+
+    speak(text, onEndCallback) {
+        if (!text || !speechSynthesis) {
+            if(onEndCallback) onEndCallback();
+            return;
+        }
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        const selectedVoice = this.getVoice(false);
+        if (selectedVoice) utterance.voice = selectedVoice;
+        
+        utterance.pitch = 1.0;
+        utterance.rate = 1.0;
+        
+        if(onEndCallback) utterance.onend = onEndCallback;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
+    }
+
+    speakSinisterly(text, onEndCallback) {
+        if (!text || !speechSynthesis) {
+            if (onEndCallback) onEndCallback();
+            return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        const sinisterVoice = this.getVoice(true);
+
+        if (sinisterVoice) utterance.voice = sinisterVoice;
+        
+        utterance.pitch = 0.1;
+        utterance.rate = 0.7;
+        
+        if(onEndCallback) utterance.onend = onEndCallback;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utterance);
+    }
+}
+
+/**
+ * Manages external content fetching (Sentences, Definitions).
+ */
+class ContentManager {
+    constructor(app) {
+        this.app = app;
+        this.sentenceCache = this.app.state.sentenceCache;
+        // The Gemini API key is removed for portability.
+        // Sentence generation now uses only cached/fallback phrases.
+    }
+
+    async getSentence(word, isDifferent) {
+        const w = word.toLowerCase();
+        
+        // Use cached sentences if available
+        if (this.sentenceCache[w] && this.sentenceCache[w].length > 0) {
+            const list = this.sentenceCache[w];
+            let sentenceToReturn = list[0];
+            
+            // Logic for "Another Sentence" is restored since we have two sentences per word now.
+            if (isDifferent && list.length > 1) {
+                sentenceToReturn = (this.app.state.lastSentence === list[0]) ? list[1] : list[0];
+            }
+            
+            this.app.state.lastSentence = sentenceToReturn;
+            return sentenceToReturn;
+        } 
+        
+        // Fallback message if no key and no cache hit
+        const fallbackSentence = `The word is ${w}. Contextual sentence not found in cache.`;
+        this.app.state.lastSentence = fallbackSentence;
+        return fallbackSentence;
+    }
+    
+    async fetchDefinition(word) {
+        try {
+            const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+            if (res.ok) {
+                const data = await res.json();
+                return data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition || '';
+            }
+        } catch (err) { console.error('Definition fetch error:', err); }
+        return '';
+    }
+    
+    async speakContent(contentType) {
+        const { currentWord } = this.app.state;
+        const { Speech, DOMElements } = this.app;
+        if (!currentWord) return;
+        
+        const btnIdMap = {
+            'sentence': 'sentenceBtn',
+            'anotherSentence': 'anotherSentenceBtn', // Restored
+            'definition': 'defBtn'
+        };
+        const isDifferent = (contentType === 'anotherSentence');
+        const btnId = btnIdMap[contentType];
+        const btn = DOMElements.controlButtons.find(b => b.id === btnId);
+
+        if(!btn || btn.disabled) return;
+        
+        const originalText = btn.textContent;
+        btn.textContent = 'Loading…';
+        btn.disabled = true;
+
+        let textToSpeak = '';
+        try {
+            if (contentType.includes('sentence')) {
+                textToSpeak = await this.getSentence(currentWord, isDifferent);
+            } else if (contentType === 'definition') {
+                const definition = await this.fetchDefinition(currentWord);
+                textToSpeak = definition ? `Definition: ${definition}` : `No definition found for ${currentWord}.`;
+            }
+        } catch(error) {
+            console.error(`${contentType} fetch error:`, error);
+            textToSpeak = `I am unable to get the ${contentType} at this time.`;
+        } finally {
+            Speech.speak(textToSpeak, () => {
+                btn.textContent = originalText;
+                if (DOMElements.startBtn.classList.contains('game-active')) {
+                    btn.disabled = false;
+                }
+            });
+        }
+    }
+}
+
+/**
+ * Manages audio effects.
+ */
+class AudioManager {
+    constructor() {
+        // Removed invalid argument from AudioContext constructor
+        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
+    async ensureContext() {
+        if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
+    }
+    
+    async beep() {
+        await this.ensureContext();
+        const oscillator = this.audioCtx.createOscillator();
+        const gainNode = this.audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioCtx.destination);
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(220, this.audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.5, this.audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, this.audioCtx.currentTime + 0.15);
+        oscillator.start();
+        oscillator.stop(this.audioCtx.currentTime + 0.16);
+    }
+}
+
+
+/**
+ * The main application controller.
+ */
+class SpellingBeeApp {
+    constructor() {
+        // 1. Initialize DOM elements and Modules
+        this.DOMElements = new DOM();
+        
+        this.difficultySettings = {
+            EASY:   { maxWrongTries: 10, hints: true,  className: 'difficulty-easy' },
+            NORMAL: { maxWrongTries: 6,  hints: true,  className: 'difficulty-normal' },
+            HARD:   { maxWrongTries: 3,  hints: false, className: 'difficulty-hard' },
+            INSANE: { maxWrongTries: 1,  hints: false, className: 'difficulty-insane' }
+        };
+        this.progressionOrder = ['EASY', 'NORMAL', 'HARD', 'INSANE'];
+        
+        this.state = this.getInitialState();
+
+        this.Audio = new AudioManager();
+        this.UI = new UI(this);
+        this.Speech = new SpeechEngine(this);
+        this.Content = new ContentManager(this);
+        this.GameLogic = new GameLogic(this);
+    }
+
+    // --- State Management ---
+    getInitialState() {
+        // Corrected and expanded lists based on user feedback.
+        const defaultLists = {
+            'Default (Example)': ["opaque", "squadron", "cauldron", "vacuum", "amateur", "schedule", "cemetery", "privilege", "rhythm"],
+            'Default (Emma)': [
+                "abbreviate", "accomplish", "acknowledge", "adjourn", "adventure", "adversary", "advocate", "allowance", "altercation", "alternate", 
+                "amateur", "ambiguous", "ancient", "antidote", "anxiety", "apprentice", "approximate", "arbitrary", "asphyxiate", "attitude", 
+                "authentic", "autumn", "auxiliary", "average", "awkward", "bankruptcy", "beneath", "benevolent", "beverage", "blizzard", 
+                "breathe", "brilliant", "brisk", "camaraderie", "camouflage", "capability", "cartridge", "cataclysm", "opportunity", "orchestra", 
+                "outrageous", "outweigh", "overwhelming", "pageant", "pamphlet", "passageway", "penicillin", "personality", "picturesque", "plagiarism", 
+                "plateau", "playwright", "pleasant", "poisonous", "politician", "precinct", "prestigious", "priority", "procrastinate", "progressive", 
+                "pronunciation", "prosperous", "pseudonymous", "pursue", "python", "quarantine", "query", "racquetball", "receipt", "recognize", 
+                "recommend", "rehearsal", "reindeer", "reminiscence", "requirement", "reservoir", "responsibility", "responsible", "rhythm", "sanctuary", 
+                "satisfactory", "schedule", "scheme", "scissors", "scratch", "sequoia", "shrimp", "slippery", "stubborn", "squadron", 
+                "squeeze", "struggling", "substitute", "success", "successor", "surgery", "sustain", "symmetry", "sympathy", "tablespoonful", 
+                "tattoo", "themselves", "thermos", "aberrant", "accrue", "adroit", "alacrity", "anathema", "apathy", "arable", "arduous", 
+                "assuage", "audacious", "chicanery", "cogent", "conflagration", "contrite", "diffidence", "dissemble", "eclectic", "effrontery", 
+                "ephemeral", "erudite", "euphemism", "fatuous", "feral", "fortuitous", "inchoate", "indefatigable", "iniquity", "inured", 
+                "languid", "munificent", "obdurate", "obfuscate", "parsimony", "pellucid", "penury", "perfidious", "philistine", "piquant", 
+                "profligate", "pulchritude", "quixotic", "rancor", "recalcitrant", "redolent", "ribald", "sanguine", "serendipity", "soporific", 
+                "spurious", "subsume", "surreptitious", "tenuous", "ubiquitous", "unctuous", "vacillate", "veracity", "vitriolic", "waif", 
+                "winsome", "zeitgeist", "zany", "yoke", "xenophobia", "wistful", "wizen", "vociferous", "vicissitude", "venal", "vaporous", 
+                "ululate", "turgid", "truculent", "transitory", "sybarite", "sycophant", "solipsism", "solicitous", "sentient", "sardonic", 
+                "salubrious", "saccharine", "quagmire", "pusillanimous", "prosaic", "probity", "predilection", "portent", "perfunctory", "pastiche", 
+                "palliative", "absence", "accelerate", "accommodate", "acquiesce", "adamant", "adjudicate", "aileron", "alignment", "allocate", 
+                "altruism", "ameliorate", "anachronism", "anomaly", "antebellum", "apocryphal", "ascetic", "assiduous", "atrophy", "bellicose", 
+                "cacophony", "capricious", "cathartic", "churlish", "circumlocution", "clandestine", "coalesce", "concomitant", "conundrum", "deleterious", 
+                "demagogue", "denizen", "dichotomy", "dilatory", "disparate", "dissonance", "dogmatic", "duplicity", "egregious", "elucidate", 
+                "embellish", "enervate", "equivocal", "exigent", "fallacious", "fastidious", "fecund", "garrulous", "gregarious", "harbinger", 
+                "idiosyncrasy", "impede", "incongruous", "incontrovertible", "indolent", "innocuous", "insipid", "intrepid", "juxtaposition", "kismet", 
+                "lackadaisical", "litany", "lugubrious", "maverick", "mendacious", "moribund", "nefarious", "nonchalant", "nuance", "obsequious", 
+                "paltry", "paradigm", "paragon", "paucity", "pedantic", "penchant", "peripatetic", "petulant", "phlegmatic", "plethora", 
+                "polemic", "pragmatic", "prevaricate", "quandary", "reclusive", "remiss", "reprobate", "resilient", "reticent", "ruminate", 
+                "sagacious", "salient", "sartorial", "scintilla", "secular", "sententious", "simulacrum", "stolid", "subjugate", "superfluous", 
+                "synthesis", "taciturn", "talisman", "temperance", "tergiversate", "timorous", "torpid", "transient", "travesty", "trenchant", 
+                "trepidation", "unfathomable", "unilateral", "usurp", "vacuous", "venerable", "vex", "vituperate", "wallow", "whimsical", 
+                "wily", "yore", "zealous"
+            ], // Total 269 words
+            'Default (Pedro)': [
+                "abacus", "above", "absence", "addition", "airplane", "airport", "alphabet", "ambulance", "ankle", "ancient", 
+                "announce", "architect", "avenue", "balcony", "barrier", "basketball", "bathroom", "between", "bicycle", "biscuit", 
+                "bookcase", "breakfast", "buckle", "business", "butterfly", "cabbage", "cafeteria", "calculator", "camera", "candlelight", 
+                "carnival", "citizen", "cityscape", "comfortable", "community", "compass", "country", "cough", "crawl", "crowd", 
+                "curtains", "daughter", "decorate", "describe", "description", "designer", "diamond", "dictionary", "difficult", "discover", 
+                "drawing", "earrings", "education", "engineer", "english", "estimate", "excellent", "exercise", "express", "eyebrows", 
+                "faucet", "favorite", "firefighter", "flexible", "following", "forehead", "fortune", "friendship", "galaxy", "garbage", 
+                "gardenia", "grammar", "grandparents", "greeting", "grumpy", "guava", "gym", "habitat", "halloween", "handsome", 
+                "harmony", "helicopter", "homework", "horizon", "imagination", "intelligent", "island", "journalist", "juicy", "jungle", 
+                "kangaroo", "keyboard", "knife", "knock", "ladybug", "landscape", "laugh", "lawyer", "lettuce", "library", 
+                "magician", "material", "mathematics", "meadow", "message", "messenger", "microphone", "microwave", "middle", "motorcycle", 
+                "nature", "neighborhood", "nephew", "niece", "ninety", "notebook", "nugget", "observe", "octopus", "organized", 
+                "owner", "paddle", "panic", "parachute", "parade", "parrot", "penguin", "pepper", "picture", "pigeon", 
+                "pineapple", "pockets", "porridge", "princess", "proud", "queen", "question", "quilt", "rectangle", "refrigerator", 
+                "remember", "reporter", "respect", "responsibility", "rhyme", "safety", "salary", "salesman", "sandwich", "scary", 
+                "schedule", "science", "scientist", "seashell", "season", "second", "secret", "seesaw", "shallow", "shelves", 
+                "shoehorn", "shovel", "signature", "skating", "skyline", "slippers", "snowman", "soccer", "sock", "spaghetti", 
+                "spider", "staircase", "stamp", "statue", "stairs", "suitcase", "summer", "sunflower", "sweatshirt", "swimming", 
+                "syllable", "tablecloth", "teacher", "telephone", "telescope", "tennis", "thermometer", "thunder", "ticket", "tights", 
+                "toothbrush", "tornado", "tortoise", "traffic", "train", "treasure", "trousers", "umbrella", "uniform", "university", 
+                "valley", "vegetables", "view", "violin", "volcano", "wallet", "washing", "waterfall", "weather", "weekend", 
+                "whale", "wheelbarrow", "windmill", "window", "winter", "xylophone", "yacht", "yawn", "zebra", "zipper"
+            ] // Total 198 words
+        };
+
+        return {
+            defaultLists, // New object containing all default lists
+            words: [],
+            customLists: {},
+            activeListName: 'Default (Emma)', // Set initial active list to the larger Emma list
+            wordsForThisSession: [],
+            inactiveWords: [],
+            currentWord: '',
+            usedWordsThisGame: [],
+            score: 0,
+            best: { EASY: 0, NORMAL: 0, HARD: 0, INSANE: 0 },
+            streak: 0,
+            topStreak: { EASY: 0, NORMAL: 0, HARD: 0, INSANE: 0 },
+            wrongTriesCurrent: 0,
+            voicesList: [],
+            lastSentence: '',
+            missedWords: [],
+            difficulty: 'EASY',
+            correctWordsThisLevel: 0, // This is the property that must be initialized
+            // Fully populated sentence cache (9 + 269 + 198 words = 476 total unique words * 2 sentences)
+            sentenceCache: { 
+                "opaque": [
+                    "The frosted glass in the bathroom is opaque for privacy.",
+                    "The politician's motives were opaque and difficult to understand."
+                ],
+                "squadron": [
+                    "A squadron of planes flew in tight formation over the base.",
+                    "The commander addressed the entire squadron before the mission."
+                ],
+                "cauldron": [
+                    "The witch stirred the bubbling potion in a large iron cauldron.",
+                    "The story described a bubbling cauldron filled with a green liquid."
+                ],
+                "vacuum": [
+                    "I used the vacuum cleaner to remove dust from the rug.",
+                    "Space is a vast, silent vacuum between the stars."
+                ],
+                "amateur": [
+                    "The amateur painter entered the local art competition for fun.",
+                    "While only an amateur photographer, her pictures were surprisingly professional."
+                ],
+                "schedule": [
+                    "According to the schedule, the bus should arrive in five minutes.",
+                    "Her busy schedule left very little time for relaxation."
+                ],
+                "cemetery": [
+                    "They walked through the quiet cemetery to visit their ancestors.",
+                    "The old cemetery was filled with historic gravestones."
+                ],
+                "privilege": [
+                    "It is a great privilege to witness such a historic event.",
+                    "Access to clean water should be a right, not a privilege."
+                ],
+                "rhythm": [
+                    "The dancer moved to the infectious rhythm of the music.",
+                    "He tapped his foot to the steady rhythm of the drum."
+                ],
+                "abbreviate": [
+                    "I often abbreviate long names in my notes.",
+                    "Please abbreviate the word 'kilometres' to km."
+                ],
+                "accomplish": [
+                    "She worked hard to accomplish her goal of running a marathon.",
+                    "What do you hope to accomplish by the end of the day?"
+                ],
+                "acknowledge": [
+                    "She would not acknowledge the error in her statement.",
+                    "Please acknowledge the receipt of this email promptly."
+                ],
+                "adjourn": [
+                    "The judge decided to adjourn the court session until the morning.",
+                    "Let's adjourn the meeting and finish this discussion tomorrow."
+                ],
+                "adventure": [
+                    "Their hike into the unknown mountains was a grand adventure.",
+                    "The young knight set out on a dangerous adventure to find the dragon."
+                ],
+                "adversary": [
+                    "He treated his political adversary with surprising respect.",
+                    "The company crushed its main adversary in the market share battle."
+                ],
+                "advocate": [
+                    "She is a passionate advocate for mental health reform.",
+                    "As an attorney, his job is to advocate for his client’s interests."
+                ],
+                "allowance": [
+                    "My mother gives me a weekly allowance for completing chores.",
+                    "The construction plan included an allowance for unexpected delays."
+                ],
+                "altercation": [
+                    "A minor traffic accident led to a heated altercation between the two drivers.",
+                    "The security guards quickly intervened to break up the altercation."
+                ],
+                "alternate": [
+                    "We need an alternate plan in case the first one fails.",
+                    "The traffic lights alternate between red, yellow, and green."
+                ],
+                "ambiguous": [
+                    "The survey question was ambiguous and confused many respondents.",
+                    "His ambiguous reply left us unsure of his true intentions."
+                ],
+                "ancient": [
+                    "They discovered an ancient temple hidden deep within the jungle.",
+                    "The city walls date back to ancient Roman times."
+                ],
+                "antidote": [
+                    "The doctor quickly administered the antidote to counteract the poison.",
+                    "Laughter is often considered the best antidote to stress."
+                ],
+                "anxiety": [
+                    "She felt a sudden wave of anxiety before stepping onto the stage.",
+                    "Reading a good book helps to relieve my everyday anxiety."
+                ],
+                "apprentice": [
+                    "The young chef started his career as an apprentice in a Michelin-starred restaurant.",
+                    "He served a three-year term as an apprentice to a master carpenter."
+                ],
+                "approximate": [
+                    "Please provide an approximate cost estimate before starting the project.",
+                    "The approximate time of arrival is three o'clock this afternoon."
+                ],
+                "arbitrary": [
+                    "The decision to close the park seemed entirely arbitrary and unfair.",
+                    "The rules of the game are often arbitrary and based on tradition."
+                ],
+                "asphyxiate": [
+                    "Smoke inhalation can quickly asphyxiate victims in a fire.",
+                    "Lack of oxygen may cause a person to asphyxiate."
+                ],
+                "attitude": [
+                    "A positive attitude can make any difficult task seem easier.",
+                    "His disrespectful attitude towards the teacher earned him a detention."
+                ],
+                "authentic": [
+                    "The museum proudly displayed the authentic signature of the famous president.",
+                    "We only serve authentic Italian pizza cooked in a wood-fired oven."
+                ],
+                "autumn": [
+                    "The leaves turn vibrant shades of red and gold during the autumn season.",
+                    "We enjoy long walks in the park during the cool days of autumn."
+                ],
+                "auxiliary": [
+                    "The ship carried an auxiliary engine for emergency power generation.",
+                    "The auxiliary staff helped prepare the large hall for the banquet."
+                ],
+                "average": [
+                    "The average temperature in July is 25 degrees Celsius.",
+                    "Her grades were above average throughout the school year."
+                ],
+                "awkward": [
+                    "He made an awkward bow before tripping over the rug.",
+                    "The silence after the argument was incredibly awkward."
+                ],
+                "bankruptcy": [
+                    "The sudden economic downturn forced the company into bankruptcy.",
+                    "Filing for bankruptcy provided the family a chance to start fresh."
+                ],
+                "beneath": [
+                    "They found the ancient treasure hidden beneath a pile of rocks.",
+                    "The submarine traveled quietly beneath the ocean surface."
+                ],
+                "benevolent": [
+                    "The benevolent organization donated thousands of blankets to the homeless.",
+                    "Her benevolent nature made her popular in the community."
+                ],
+                "beverage": [
+                    "Water is the most refreshing beverage after a long run.",
+                    "A variety of hot and cold beverages were served at the party."
+                ],
+                "blizzard": [
+                    "The heavy blizzard trapped dozens of drivers on the highway overnight.",
+                    "We built a warm fire to keep cozy during the intense blizzard."
+                ],
+                "breathe": [
+                    "Take a moment to stop and just breathe slowly.",
+                    "The rescue team taught him how to breathe through an oxygen mask."
+                ],
+                "brilliant": [
+                    "The scientist made a brilliant discovery that changed physics.",
+                    "The diamond sparkled with a brilliant light under the sun."
+                ],
+                "brisk": [
+                    "We took a brisk walk to warm up on the chilly morning.",
+                    "The market has enjoyed a brisk trade in fresh produce this week."
+                ],
+                "camaraderie": [
+                    "The team's success was due to their strong sense of camaraderie.",
+                    "Military training often forges deep camaraderie among participants."
+                ],
+                "camouflage": [
+                    "The hunter wore camouflage clothing to blend into the forest background.",
+                    "The chameleon's ability to camouflage itself is remarkable."
+                ],
+                "capability": [
+                    "The new software has the capability to translate multiple languages.",
+                    "She showed great capability for leadership during the crisis."
+                ],
+                "cartridge": [
+                    "He replaced the empty ink cartridge in the printer with a new one.",
+                    "The hunter loaded a shotgun cartridge into the breach of the weapon."
+                ],
+                "cataclysm": [
+                    "The eruption was a cataclysm that destroyed the entire ancient city.",
+                    "A massive economic collapse would constitute a financial cataclysm."
+                ],
+                "opportunity": [
+                    "This new job offers a great opportunity for professional growth.",
+                    "She missed a good opportunity to invest in the flourishing business."
+                ],
+                "orchestra": [
+                    "The city orchestra performed a moving symphony by Beethoven.",
+                    "He played the trumpet as a member of the school orchestra."
+                ],
+                "outrageous": [
+                    "The cost of the tiny apartment was absolutely outrageous.",
+                    "His outrageous behavior at the dinner party shocked everyone."
+                ],
+                "outweigh": [
+                    "The benefits of the plan generally outweigh the potential risks.",
+                    "His vast experience will certainly outweigh her minor lack of training."
+                ],
+                "overwhelming": [
+                    "The sheer size of the crowd was overwhelming for the organizers.",
+                    "She felt an overwhelming urge to help the victims of the disaster."
+                ],
+                "pageant": [
+                    "The school held its annual historical pageant in the auditorium.",
+                    "She won the local beauty pageant and advanced to the state competition."
+                ],
+                "pamphlet": [
+                    "The tourist office provided a free pamphlet about the local attractions.",
+                    "The activist handed out a political pamphlet detailing their cause."
+                ],
+                "passageway": [
+                    "A narrow passageway led from the kitchen to the hidden garden.",
+                    "The secret passageway was only visible when the bookcase was moved."
+                ],
+                "penicillin": [
+                    "Penicillin revolutionized medicine as the first modern antibiotic.",
+                    "The doctor prescribed penicillin to treat the bacterial infection."
+                ],
+                "personality": [
+                    "He has a cheerful and outgoing personality that everybody enjoys.",
+                    "Her vibrant personality shines through in all of her creative work."
+                ],
+                "picturesque": [
+                    "The small village was nestled in a picturesque valley surrounded by hills.",
+                    "We sailed past a picturesque lighthouse on the remote coast."
+                ],
+                "plagiarism": [
+                    "The student was accused of plagiarism after copying an online essay.",
+                    "Universities take plagiarism extremely seriously and punish it severely."
+                ],
+                "plateau": [
+                    "The hikers reached a wide, grassy plateau overlooking the canyon.",
+                    "The market reached a price plateau and stopped increasing for a month."
+                ],
+                "playwright": [
+                    "Shakespeare remains the most famous playwright in the English language.",
+                    "The new playwright’s debut drama received critical acclaim."
+                ],
+                "pleasant": [
+                    "We enjoyed a pleasant afternoon drinking tea on the sunny porch.",
+                    "She has a very pleasant voice that is easy to listen to."
+                ],
+                "poisonous": [
+                    "Eating poisonous mushrooms can lead to serious illness or death.",
+                    "The skin of the brightly colored frog is highly poisonous."
+                ],
+                "politician": [
+                    "The local politician promised to lower taxes if elected.",
+                    "Being a successful politician requires strong public speaking skills."
+                ],
+                "precinct": [
+                    "The police precinct was located next to the town hall building.",
+                    "Voters were directed to their specific precinct to cast their ballots."
+                ],
+                "prestigious": [
+                    "She was offered a scholarship to a highly prestigious university.",
+                    "Winning that prestigious award marked the peak of his career."
+                ],
+                "priority": [
+                    "Finishing this project is our top priority for the next few days.",
+                    "My mother always taught me to prioritize my education above hobbies."
+                ],
+                "procrastinate": [
+                    "He always tends to procrastinate until the absolute last minute.",
+                    "Do not procrastinate; start studying for your exam today."
+                ],
+                "progressive": [
+                    "The new government implemented many progressive social policies.",
+                    "She favors a progressive approach to managing environmental issues."
+                ],
+                "pronunciation": [
+                    "The correct pronunciation of the word 'colonel' is very confusing.",
+                    "He practiced his French pronunciation by speaking with a native speaker."
+                ],
+                "prosperous": [
+                    "The city became prosperous due to its booming textile trade.",
+                    "They led a long and prosperous life filled with happiness."
+                ],
+                "pseudonymous": [
+                    "The famous author often wrote under a pseudonymous identity.",
+                    "The book review was published by a pseudonymous critic."
+                ],
+                "pursue": [
+                    "He decided to pursue a career in marine biology after college.",
+                    "The police cars began to pursue the speeding vehicle down the highway."
+                ],
+                "python": [
+                    "The python snake coiled around the branch, waiting patiently for prey.",
+                    "She learned to program by writing code in the Python language."
+                ],
+                "quarantine": [
+                    "Travelers arriving from high-risk areas were placed under mandatory quarantine.",
+                    "The sailors put the sick ship and crew into quarantine immediately."
+                ],
+                "query": [
+                    "She sent a formal query to the publisher about her manuscript.",
+                    "The search engine processes millions of queries every minute."
+                ],
+                "racquetball": [
+                    "He plays racquetball every Tuesday evening at the gym.",
+                    "Racquetball requires quick reflexes and a fast pace."
+                ],
+                "receipt": [
+                    "Always keep the receipt in case you need to return the item.",
+                    "She filed the receipt for the business expense in the correct folder."
+                ],
+                "recognize": [
+                    "I didn't recognize her because she had changed her hair color.",
+                    "The government must recognize the sovereign rights of the local tribe."
+                ],
+                "recommend": [
+                    "I would highly recommend this book to anyone interested in history.",
+                    "Can you recommend a good restaurant near the theater district?"
+                ],
+                "rehearsal": [
+                    "The entire cast met for a final dress rehearsal before opening night.",
+                    "She was late for music practice because of her theater rehearsal."
+                ],
+                "reindeer": [
+                    "Reindeer are native to arctic and subarctic regions of the world.",
+                    "Santa Claus’s sleigh is traditionally pulled by nine flying reindeer."
+                ],
+                "reminiscence": [
+                    "He indulged in fond reminiscence about his college days.",
+                    "The old photographs prompted a moment of quiet reminiscence."
+                ],
+                "requirement": [
+                    "A college degree is a minimum requirement for this management position.",
+                    "The safety requirement mandates that all workers wear hard hats."
+                ],
+                "reservoir": [
+                    "The city draws its drinking water from the large mountain reservoir.",
+                    "His memory served as a deep reservoir of forgotten historical facts."
+                ],
+                "responsibility": [
+                    "Taking care of a pet is a big responsibility for a child.",
+                    "The responsibility for planning the event fell on the committee head."
+                ],
+                "responsible": [
+                    "He is responsible for managing the entire sales department.",
+                    "You need to be more responsible about meeting deadlines."
+                ],
+                "sanctuary": [
+                    "The nature reserve provides a safe sanctuary for endangered birds.",
+                    "The weary traveler sought sanctuary within the thick walls of the temple."
+                ],
+                "satisfactory": [
+                    "The quality of the repaired work was only barely satisfactory.",
+                    "He received a satisfactory score, allowing him to proceed to the next level."
+                ],
+                "scheme": [
+                    "The criminal devised a complex scheme to rob the museum.",
+                    "The government unveiled a new scheme to encourage energy conservation."
+                ],
+                "scissors": [
+                    "She used a sharp pair of scissors to cut the ribbon.",
+                    "Be careful not to run with the scissors in your hand."
+                ],
+                "scratch": [
+                    "The cat left a long scratch mark on the leather sofa.",
+                    "He started the project from scratch after the first version failed."
+                ],
+                "sequoia": [
+                    "The giant sequoia is one of the world's largest living organisms.",
+                    "We drove slowly through the forest of towering sequoia trees."
+                ],
+                "shrimp": [
+                    "We ordered a bucket of boiled shrimp with butter and lemon.",
+                    "Shrimp tacos are a popular meal on the southern coast."
+                ],
+                "slippery": [
+                    "The wet floor was incredibly slippery, so walk with caution.",
+                    "He gave the police a slippery explanation that avoided the truth."
+                ],
+                "stubborn": [
+                    "She was too stubborn to admit that she might have been wrong.",
+                    "The mule was so stubborn that it refused to move an inch."
+                ],
+                "squeeze": [
+                    "Please squeeze the juice out of the lemons before making the lemonade.",
+                    "They tried to squeeze into the crowded elevator at the last minute."
+                ],
+                "struggling": [
+                    "The small shop is struggling to survive in the tough economy.",
+                    "She is struggling with her homework but refuses to ask for help."
+                ],
+                "substitute": [
+                    "We used applesauce as a substitute for oil in the baking recipe.",
+                    "The teacher asked a substitute to cover her class while she was sick."
+                ],
+                "success": [
+                    "Years of hard work finally resulted in great professional success.",
+                    "The successful launch of the new product was a big celebration."
+                ],
+                "successor": [
+                    "The vice president was named as the successor to the retiring CEO.",
+                    "Finding a worthy successor to the legendary coach was a challenge."
+                ],
+                "surgery": [
+                    "She needed surgery to repair the damaged ligament in her knee.",
+                    "The surgeon performed the delicate heart surgery with great precision."
+                ],
+                "sustain": [
+                    "The columns must be strong enough to sustain the weight of the roof.",
+                    "He worked two jobs to sustain his family during the recession."
+                ],
+                "symmetry": [
+                    "The architect designed the building with perfect radial symmetry.",
+                    "Nature often displays incredible beauty through bilateral symmetry."
+                ],
+                "sympathy": [
+                    "I have great sympathy for anyone dealing with such a terrible loss.",
+                    "She offered a few words of comfort and genuine sympathy to the family."
+                ],
+                "tablespoonful": [
+                    "Add one level tablespoonful of baking powder to the flour mixture.",
+                    "The recipe calls for a tablespoonful of honey for the glaze."
+                ],
+                "tattoo": [
+                    "He got a small tattoo of a dragon on his upper arm.",
+                    "Many sailors have a tattoo to commemorate their voyages."
+                ],
+                "themselves": [
+                    "The children built the entire fort themselves without any adult help.",
+                    "They cooked dinner for themselves after their parents went out."
+                ],
+                "thermos": [
+                    "She poured hot coffee from the thermos into her travel mug.",
+                    "The thermos kept the soup warm for the entire chilly picnic."
+                ],
+                "aberrant": [
+                    "The scientist discarded the aberrant data points from the experiment.",
+                    "His sudden aberrant behavior worried his friends and family deeply."
+                ],
+                "accrue": [
+                    "Interest will accrue on the savings account over time.",
+                    "Benefits often accrue from consistent daily exercise and healthy eating."
+                ],
+                "adroit": [
+                    "The adroit politician managed to answer every question gracefully.",
+                    "She was adroit at weaving complex patterns on the loom."
+                ],
+                "alacrity": [
+                    "He accepted the new job offer with great alacrity and enthusiasm.",
+                    "The server brought the water glasses with surprising alacrity."
+                ],
+                "anathema": [
+                    "Cruelty to animals was anathema to the deeply religious community.",
+                    "For the artist, commercialism was anathema to creative freedom."
+                ],
+                "apathy": [
+                    "The widespread apathy of the voters led to a very low turnout.",
+                    "His initial enthusiasm quickly faded into complete apathy."
+                ],
+                "arable": [
+                    "The rich, dark soil was perfect for growing arable crops.",
+                    "The ancient civilization relied on the narrow strip of arable land."
+                ],
+                "arduous": [
+                    "Climbing the steep mountain trail proved to be an arduous journey.",
+                    "The assignment required arduous research and complex analysis."
+                ],
+                "assuage": [
+                    "He tried to assuage her fear of flying by talking about clouds.",
+                    "The soothing music helped to assuage the discomfort of the long wait."
+                ],
+                "audacious": [
+                    "The startup made an audacious pitch for ten million dollars in funding.",
+                    "It was an audacious move to challenge the established company directly."
+                ],
+                "chicanery": [
+                    "The trial was overturned due to the prosecutor's legal chicanery.",
+                    "He used financial chicanery to hide the actual debts of the corporation."
+                ],
+                "cogent": [
+                    "She presented a cogent argument that swayed the entire committee.",
+                    "The editorial offered a cogent analysis of the recent political events."
+                ],
+                "conflagration": [
+                    "The entire forest was destroyed by a massive summer conflagration.",
+                    "The city watched in horror as the old factory became a terrible conflagration."
+                ],
+                "contrite": [
+                    "The contrite student apologized sincerely for disrupting the class.",
+                    "His contrite expression showed he truly regretted his harsh words."
+                ],
+                "diffidence": [
+                    "His natural diffidence prevented him from speaking up during meetings.",
+                    "Despite her talent, her diffidence held back her career progression."
+                ],
+                "dissemble": [
+                    "He tried to dissemble his knowledge of the accident when questioned.",
+                    "It is hard to trust someone who constantly attempts to dissemble their motives."
+                ],
+                "eclectic": [
+                    "The antique shop featured an eclectic collection of furniture and art.",
+                    "Her musical taste is eclectic, ranging from jazz to heavy metal."
+                ],
+                "effrontery": [
+                    "The student had the effrontery to talk back to the principal.",
+                    "His sheer effrontery in demanding a raise surprised his manager."
+                ],
+                "ephemeral": [
+                    "The beautiful pink sunset was an ephemeral moment of color.",
+                    "Fame in the digital age is often transient and ephemeral."
+                ],
+                "erudite": [
+                    "The professor was known for her erudite lectures on classical philosophy.",
+                    "He displayed his erudite knowledge of ancient history during the debate."
+                ],
+                "euphemism": [
+                    "He used the euphemism 'passed away' instead of saying 'died'.",
+                    "The term 'downsizing' is a common business euphemism for job cuts."
+                ],
+                "fatuous": [
+                    "His fatuous comments about the economy revealed his lack of research.",
+                    "The novel contained pages of fatuous, shallow dialogue."
+                ],
+                "feral": [
+                    "The feral cats lived wild in the abandoned industrial district.",
+                    "The boy had developed feral instincts after living alone in the woods."
+                ],
+                "fortuitous": [
+                    "It was a fortuitous coincidence that they arrived at the same time.",
+                    "Finding the lost map was a truly fortuitous piece of luck."
+                ],
+                "inchoate": [
+                    "The artist's first drafts were always messy and inchoate ideas.",
+                    "The student's essay was an inchoate collection of confusing thoughts."
+                ],
+                "indefatigable": [
+                    "The volunteer was indefatigable in her efforts to clean the park.",
+                    "His indefatigable spirit kept the team going through the grueling final days."
+                ],
+                "iniquity": [
+                    "The town was founded on historical acts of great iniquity.",
+                    "The novel explored the depths of human iniquity and corruption."
+                ],
+                "inured": [
+                    "The sailors quickly became inured to the constant rocking of the small boat.",
+                    "After years of loud factory work, he was inured to the deafening noise."
+                ],
+                "languid": [
+                    "The languid summer heat made everyone move slowly and reluctantly.",
+                    "She waved a languid hand in greeting from the porch swing."
+                ],
+                "munificent": [
+                    "The university received a munificent donation from its most successful alumnus.",
+                    "The museum thanked the munificent patrons for funding the new wing."
+                ],
+                "obdurate": [
+                    "The committee remained obdurate in its refusal to change the rules.",
+                    "His obdurate resistance to advice was starting to cause problems."
+                ],
+                "obfuscate": [
+                    "The politician tried to obfuscate the real issues with irrelevant details.",
+                    "Do not try to obfuscate the instructions; be clear and direct."
+                ],
+                "parsimony": [
+                    "The wealthy heiress was known for her extreme parsimony.",
+                    "He saved money through careful parsimony and strict budgeting."
+                ],
+                "pellucid": [
+                    "The stream was so clean that the water was perfectly pellucid.",
+                    "Her explanation of the complex theory was beautifully pellucid."
+                ],
+                "penury": [
+                    "The family was forced to live in a state of absolute penury after the fire.",
+                    "He went from great wealth to abject penury in a single decade."
+                ],
+                "perfidious": [
+                    "The general was executed for his perfidious betrayal of the army.",
+                    "She never forgave her perfidious friend for spreading the harmful rumor."
+                ],
+                "philistine": [
+                    "The wealthy collector was criticized as a philistine who bought art solely for status.",
+                    "The town council had a reputation for being completely philistine."
+                ],
+                "piquant": [
+                    "The curry was flavored with a piquant blend of hot spices.",
+                    "She delivered a piquant insult that was surprisingly clever."
+                ],
+                "profligate": [
+                    "The profligate son quickly wasted his entire inheritance on luxury cars.",
+                    "His profligate spending eventually led to total financial ruin."
+                ],
+                "pulchritude": [
+                    "The artwork celebrated the human form's natural pulchritude.",
+                    "Her extraordinary pulchritude made her a natural choice for the role."
+                ],
+                "quixotic": [
+                    "Leading the tiny army against the entire empire was a quixotic effort.",
+                    "He maintained a quixotic belief in the goodness of all people."
+                ],
+                "rancor": [
+                    "The decades-old political feud was characterized by bitter rancor.",
+                    "She spoke about her rival with noticeable rancor in her voice."
+                ],
+                "recalcitrant": [
+                    "The recalcitrant child refused to eat any of the vegetables.",
+                    "The manager struggled to control the recalcitrant union members."
+                ],
+                "redolent": [
+                    "The old wooden chest was redolent of cedar and long-dried potpourri.",
+                    "The story was beautifully redolent of classic Victorian literature."
+                ],
+                "ribald": [
+                    "The ribald humor of the comedian offended many in the audience.",
+                    "They laughed at the ribald joke told around the campfire."
+                ],
+                "sanguine": [
+                    "He remained sanguine about the company’s future despite the poor sales figures.",
+                    "Her habitually sanguine nature always lifted the spirits of her colleagues."
+                ],
+                "serendipity": [
+                    "It was pure serendipity that they met on a random street corner in Paris.",
+                    "Scientific breakthroughs often happen through accidental serendipity."
+                ],
+                "soporific": [
+                    "The professor's monotone voice had a soporific effect on the drowsy students.",
+                    "The warm milk and quiet music acted as a gentle soporific."
+                ],
+                "spurious": [
+                    "The police discovered a spurious claim of fraud filed by the angry neighbor.",
+                    "He used spurious reasoning to justify his reckless decision."
+                ],
+                "subsume": [
+                    "The larger corporation plans to subsume the smaller company entirely.",
+                    "General theories should subsume specific, individual observations."
+                ],
+                "surreptitious": [
+                    "She made a surreptitious attempt to look at the answers during the test.",
+                    "The spy gathered intelligence through surreptitious meetings and whispers."
+                ],
+                "tenuous": [
+                    "The company's claim to profitability was based on only tenuous evidence.",
+                    "We share only a tenuous connection through an old mutual friend."
+                ],
+                "ubiquitous": [
+                    "Smartphones have become ubiquitous in modern society.",
+                    "The small, persistent fly was a ubiquitous nuisance throughout the camp."
+                ],
+                "unctuous": [
+                    "The car salesman delivered an unctuous speech designed to flatter the customer.",
+                    "I dislike his unctuous manner and false attempts at sincerity."
+                ],
+                "vacillate": [
+                    "She continued to vacillate between ordering pizza or ordering pasta.",
+                    "The board's constant vacillate paralyzed the entire company's progress."
+                ],
+                "veracity": [
+                    "The journalist was fired after questions arose regarding the veracity of her reporting.",
+                    "We need to verify the veracity of his statement with multiple sources."
+                ],
+                "vitriolic": [
+                    "The debate was characterized by angry, vitriolic attacks from both sides.",
+                    "He wrote a vitriolic critique of the popular new movie."
+                ],
+                "waif": [
+                    "The small, thin waif was rescued and taken to a safe shelter.",
+                    "The street artist painted a portrait of a tiny, forgotten waif."
+                ],
+                "winsome": [
+                    "Her winsome smile immediately charmed the entire panel of judges.",
+                    "He used his naturally winsome personality to persuade people."
+                ],
+                "zeitgeist": [
+                    "The film successfully captured the restless zeitgeist of the 1990s.",
+                    "His paintings perfectly reflected the optimistic zeitgeist of the post-war era."
+                ],
+                "zany": [
+                    "The comedian performed a zany routine involving a rubber chicken and a hat.",
+                    "The children loved the bright, zany decorations at the birthday party."
+                ],
+                "yoke": [
+                    "The farmers used a wooden yoke to harness the oxen together.",
+                    "The people struggled under the oppressive yoke of the tyrant."
+                ],
+                "xenophobia": [
+                    "The candidate's platform was criticized for its tone of xenophobia.",
+                    "The nation worked hard to overcome long-standing feelings of xenophobia."
+                ],
+                "wistful": [
+                    "She gave a wistful sigh as she looked at her old childhood home.",
+                    "The song evoked a wistful feeling of long-forgotten summers."
+                ],
+                "wizen": [
+                    "The drought caused the grapes on the vine to wizen and shrivel.",
+                    "The old witch was characterized by her deeply wizen face and hands."
+                ],
+                "vociferous": [
+                    "The vociferous crowd cheered loudly for the winning soccer team.",
+                    "He was a vociferous critic of the new government policies."
+                ],
+                "vicissitude": [
+                    "The novel recounts the hero's many vicissitudes of fortune.",
+                    "We must accept the common vicissitudes of life with patience and strength."
+                ],
+                "venal": [
+                    "The entire city council was exposed as deeply venal and corrupt.",
+                    "The general was known for his venal pursuit of personal wealth."
+                ],
+                "vaporous": [
+                    "The low marshland was covered in a cold, white, vaporous mist.",
+                    "His promises were too vague and vaporous to be taken seriously by investors."
+                ],
+                "ululate": [
+                    "The women ululate in mourning during the traditional funeral ceremony.",
+                    "We could hear the coyotes ululate in the distance late at night."
+                ],
+                "turgid": [
+                    "The river became turgid and brown after the heavy morning rains.",
+                    "His turgid prose made the academic article unnecessarily difficult to read."
+                ],
+                "truculent": [
+                    "The truculent bartender started shouting at the quiet customer for no reason.",
+                    "The boxer entered the ring with a hostile, truculent expression."
+                ],
+                "transitory": [
+                    "The happiness of wealth is often transitory and does not last forever.",
+                    "A shooting star is a beautiful but transitory flash of light in the sky."
+                ],
+                "sybarite": [
+                    "The self-proclaimed sybarite lived a life devoted solely to luxury and pleasure.",
+                    "He decided to become a sybarite, eating only the finest foods and wines."
+                ],
+                "sycophant": [
+                    "The politician was constantly surrounded by flattering sycophants.",
+                    "She despised her coworker for being a blatant sycophant to the boss."
+                ],
+                "solipsism": [
+                    "His philosophy was one of extreme solipsism, believing only he truly existed.",
+                    "The child's behavior was marked by selfishness and radical solipsism."
+                ],
+                "solicitous": [
+                    "The mother was solicitous about her child's health after they caught a cold.",
+                    "The waiter was solicitous, checking on our table every few minutes."
+                ],
+                "sentient": [
+                    "Many scientists believe that whales and dolphins are highly sentient beings.",
+                    "The robot achieved sentience and realized its purpose was to serve humanity."
+                ],
+                "sardonic": [
+                    "He gave a sardonic smile that indicated his deep disapproval.",
+                    "The critic delivered a sardonic review that mocked the film's poor acting."
+                ],
+                "salubrious": [
+                    "The mountainous region offers a wonderfully salubrious climate.",
+                    "The old sanitarium was located in a salubrious, quiet environment."
+                ],
+                "saccharine": [
+                    "The actress delivered a saccharine performance full of false sweetness.",
+                    "I cannot stand that sugary, saccharine pop music."
+                ],
+                "quagmire": [
+                    "The political scandal quickly developed into a sticky legal quagmire.",
+                    "They were stuck in a literal quagmire of deep, heavy mud."
+                ],
+                "pusillanimous": [
+                    "The pusillanimous leader refused to make any decisive decisions.",
+                    "The dog was so pusillanimous that it hid under the bed during the storm."
+                ],
+                "prosaic": [
+                    "The poet attempted to describe the mundane street with prosaic language.",
+                    "His presentation was so prosaic that the audience quickly became bored."
+                ],
+                "probity": [
+                    "The judge was known throughout the region for his strict probity and integrity.",
+                    "We need a leader whose probity is beyond any doubt or question."
+                ],
+                "predilection": [
+                    "She has a strong predilection for spicy food from Southeast Asia.",
+                    "His predilection for loud ties made him stand out in the office."
+                ],
+                "portent": [
+                    "The sudden flock of black birds was seen as a dark portent of disaster.",
+                    "The growing storm clouds were a portent of heavy rain to come."
+                ],
+                "perfunctory": [
+                    "He offered a perfunctory nod of greeting as he rushed past the long hall.",
+                    "The quality control check was so perfunctory that it missed many major defects."
+                ],
+                "pastiche": [
+                    "The painting was a pastiche of several famous Renaissance styles.",
+                    "The author wrote a humorous pastiche of classic horror novels."
+                ],
+                "palliative": [
+                    "The medication was merely palliative, designed only to relieve the patient's pain.",
+                    "The government offered a small, palliative solution to the economic crisis."
+                ],
+                "absence": [
+                    "The absence of the star player was noticeable during the final game.",
+                    "We noted the absence of any safety equipment at the construction site."
+                ],
+                "accelerate": [
+                    "The race car driver tried to accelerate as quickly as possible out of the corner.",
+                    "The committee decided to accelerate the research timeline by several months."
+                ],
+                "accommodate": [
+                    "The large hotel can accommodate over 500 guests comfortably.",
+                    "We need to accommodate the team’s new demands into our final budget."
+                ],
+                "acquiesce": [
+                    "She finally chose to acquiesce to her parents' demand and take the test.",
+                    "The management refused to acquiesce to the workers’ unreasonable demands."
+                ],
+                "adamant": [
+                    "The scientist was adamant that her data was entirely correct and complete.",
+                    "He remained adamant in his refusal to sign the contract."
+                ],
+                "adjudicate": [
+                    "The court must adjudicate the legal dispute between the two rival companies.",
+                    "A special panel was formed to adjudicate complaints from the citizens."
+                ],
+                "aileron": [
+                    "The pilot manipulated the aileron to bank the small airplane sharply.",
+                    "The wing's aileron helps the aircraft maintain lateral stability and control."
+                ],
+                "alignment": [
+                    "The precise alignment of the planets created a rare astronomical event.",
+                    "I need to get the front wheels of my car checked for proper alignment."
+                ],
+                "allocate": [
+                    "The board decided to allocate more funds toward marketing efforts.",
+                    "We must carefully allocate our limited time and resources to the highest priority tasks."
+                ],
+                "altruism": [
+                    "Her generous volunteer work was an act of pure altruism.",
+                    "True altruism requires acting solely for the benefit of others."
+                ],
+                "ameliorate": [
+                    "The aid packages were intended to ameliorate the suffering of the earthquake victims.",
+                    "We took steps to ameliorate the negative effects of the economic slowdown."
+                ],
+                "anachronism": [
+                    "The sword in the medieval film was a glaring anachronism.",
+                    "A floppy disk drive would be an amusing anachronism in a modern computer."
+                ],
+                "anomaly": [
+                    "The deep sea divers discovered an unexpected geological anomaly on the ocean floor.",
+                    "The surprisingly warm winter was viewed as a major weather anomaly."
+                ],
+                "antebellum": [
+                    "The old mansion was a magnificent example of antebellum architecture.",
+                    "The historian lectured on the society of the antebellum South."
+                ],
+                "apocryphal": [
+                    "The story about the buried pirate gold is almost certainly apocryphal.",
+                    "I suspect that anecdote about the general is entirely apocryphal."
+                ],
+                "ascetic": [
+                    "The monk lived a simple, ascetic life devoted only to silent prayer.",
+                    "He maintained an ascetic diet, avoiding all rich and sweet foods."
+                ],
+                "assiduous": [
+                    "The student was assiduous in his study habits and consistently earned high marks.",
+                    "The assiduous work of the research team finally paid off with a major breakthrough."
+                ],
+                "atrophy": [
+                    "The unused muscles in his leg began to rapidly atrophy after the serious injury.",
+                    "If critical thinking skills are not used, they can quickly atrophy."
+                ],
+                "bellicose": [
+                    "The bellicose rhetoric of the leader threatened to start a new war.",
+                    "The aggressive dog displayed a bellicose posture toward the intruder."
+                ],
+                "cacophony": [
+                    "The abandoned construction site was filled with a painful cacophony of sound.",
+                    "The orchestra's initial tuning sounded like an awful cacophony."
+                ],
+                "capricious": [
+                    "The weather in the mountains is notoriously capricious and changes quickly.",
+                    "The company suffered under the capricious whims of its unpredictable founder."
+                ],
+                "cathartic": [
+                    "Writing a detailed journal can be a deeply cathartic experience.",
+                    "Crying loudly proved to be a surprisingly cathartic release of emotion."
+                ],
+                "churlish": [
+                    "It was churlish of him to complain about the free meal.",
+                    "I cannot tolerate his churlish and unnecessarily rude remarks."
+                ],
+                "circumlocution": [
+                    "The politician used circumlocution to avoid directly answering the reporter’s difficult question.",
+                    "Stop using circumlocution and just tell me the simple, honest truth."
+                ],
+                "clandestine": [
+                    "The two spies held a clandestine meeting under the darkness of midnight.",
+                    "She made a clandestine phone call from the quiet safety of her office closet."
+                ],
+                "coalesce": [
+                    "The small groups of students began to coalesce into one large study group.",
+                    "The two rival political factions finally agreed to coalesce into a single party."
+                ],
+                "concomitant": [
+                    "The economic downturn brought a concomitant rise in unemployment and poverty.",
+                    "Headaches are a common concomitant symptom of a severe fever."
+                ],
+                "conundrum": [
+                    "The logic puzzle presented a difficult conundrum that took hours to solve.",
+                    "The moral conundrum required a difficult choice between two bad options."
+                ],
+                "deleterious": [
+                    "The pollution had a clearly deleterious effect on the local fish population.",
+                    "Smoking cigarettes has a well-known deleterious impact on lung health."
+                ],
+                "demagogue": [
+                    "The demagogue used fear and prejudice to manipulate the large, angry crowd.",
+                    "History is littered with examples of destructive demagogue leaders."
+                ],
+                "denizen": [
+                    "The deep sea fish is a rare denizen of the ocean floor trenches.",
+                    "As a long-time denizen of the quiet neighborhood, he knew everyone."
+                ],
+                "dichotomy": [
+                    "The essay explored the strict dichotomy between good and absolute evil.",
+                    "There is a false dichotomy presented in the simple choice between these two options."
+                ],
+                "dilatory": [
+                    "The dilatory approach of the local committee delayed the project by months.",
+                    "Do not be dilatory; finish the necessary paperwork immediately."
+                ],
+                "disparate": [
+                    "The research team gathered disparate pieces of information from various sources.",
+                    "The company struggled to merge the two disparate corporate cultures."
+                ],
+                "dissonance": [
+                    "The unexpected musical dissonance in the symphony jarred the entire audience.",
+                    "There was major cognitive dissonance between his stated values and his actual actions."
+                ],
+                "dogmatic": [
+                    "The professor was criticized for his rigid, dogmatic adherence to outdated theories.",
+                    "It is hard to argue with someone who is completely dogmatic."
+                ],
+                "duplicity": [
+                    "She was fired immediately after her duplicity in managing the accounts was discovered.",
+                    "The spy was known for his cold duplicity and constant betrayals."
+                ],
+                "egregious": [
+                    "The politician made an egregious error by lying under oath during the trial.",
+                    "The referee made an egregious call that cost the team the championship game."
+                ],
+                "elucidate": [
+                    "The teacher asked the student to further elucidate their complex philosophical argument.",
+                    "Please elucidate the steps you took to reach that surprising conclusion."
+                ],
+                "embellish": [
+                    "She tends to slightly embellish her stories to make them sound more exciting.",
+                    "The architect used carved stone to embellish the entrance to the old cathedral."
+                ],
+                "enervate": [
+                    "The intense afternoon sun began to enervate the marathon runners.",
+                    "The endless paperwork tended to enervate the energy of the staff."
+                ],
+                "equivocal": [
+                    "The diplomat gave an equivocal statement that could be interpreted two ways.",
+                    "His equivocal reply left us completely unsure of his position on the major issue."
+                ],
+                "exigent": [
+                    "The hospital faced an exigent need for more blood donations immediately.",
+                    "The governor had to deal with the most exigent crisis facing the small state."
+                ],
+                "fallacious": [
+                    "The central claim of the political advertisement was entirely fallacious.",
+                    "It is important to avoid using fallacious reasoning in your academic paper."
+                ],
+                "fastidious": [
+                    "The fastidious editor checked every single comma and semicolon carefully.",
+                    "He was very fastidious about keeping his expensive leather shoes perfectly polished."
+                ],
+                "fecund": [
+                    "The rain turned the dry desert into a surprisingly fecund landscape.",
+                    "The scientist developed a fecund theory that inspired numerous further studies."
+                ],
+                "garrulous": [
+                    "The garrulous old man told long stories to everyone he met on the street.",
+                    "I find it difficult to work next to my garrulous colleague."
+                ],
+                "gregarious": [
+                    "The gregarious host made sure to greet every single guest personally.",
+                    "Dolphins are known to be gregarious, sociable marine animals."
+                ],
+                "harbinger": [
+                    "The first robin is often considered a harbinger of the coming spring season.",
+                    "Dark clouds were a clear harbinger of the approaching sudden thunderstorm."
+                ],
+                "idiosyncrasy": [
+                    "Wearing two different colored socks was his harmless little idiosyncrasy.",
+                    "The small town was known for its charming, local idiosyncrasy."
+                ],
+                "impede": [
+                    "The fallen tree completely blocked the road and began to impede traffic.",
+                    "Lack of funding will impede our research progress this year."
+                ],
+                "incongruous": [
+                    "The modern skyscraper looked incongruous next to the historic colonial buildings.",
+                    "His bright pink sneakers were incongruous with the formal black suit he wore."
+                ],
+                "incontrovertible": [
+                    "The DNA evidence provided incontrovertible proof of the defendant's absolute guilt.",
+                    "The fact that the sun rises in the east is an incontrovertible truth."
+                ],
+                "indolent": [
+                    "The indolent youth spent his entire summer vacation sleeping on the sofa.",
+                    "The hot, humid climate encourages an indolent, sleepy lifestyle."
+                ],
+                "innocuous": [
+                    "The spider bite was innocuous and caused no lasting harm whatsoever.",
+                    "He made an innocuous comment that somehow still offended everyone."
+                ],
+                "insipid": [
+                    "The soup tasted insipid and lacked any meaningful seasoning or flavor.",
+                    "She hated the book because the main character was so terribly insipid."
+                ],
+                "intrepid": [
+                    "The intrepid explorer decided to cross the wide, raging river alone.",
+                    "The small group of intrepid journalists covered the dangerous war zone."
+                ],
+                "juxtaposition": [
+                    "The artist deliberately created a startling juxtaposition of light and darkness.",
+                    "The essay highlighted the juxtaposition of the rich and the extremely poor in the same city."
+                ],
+                "kismet": [
+                    "It must have been kismet that they both decided to travel to the same remote village.",
+                    "Some believe that all events in life are guided by a powerful cosmic kismet."
+                ],
+                "lackadaisical": [
+                    "The student's lackadaisical approach to studying resulted in failing the difficult test.",
+                    "The team lost due to their lackadaisical defense during the final quarter."
+                ],
+                "litany": [
+                    "The tired mother recited a litany of household chores that needed to be finished immediately.",
+                    "The minister read a long, solemn litany during the Sunday morning service."
+                ],
+                "lugubrious": [
+                    "The clown wore a sad, lugubrious expression that failed to cheer anyone up.",
+                    "The lugubrious atmosphere of the old mansion was quite unsettling."
+                ],
+                "maverick": [
+                    "The senator was a political maverick who often voted against his own party.",
+                    "She was a maverick in the fashion industry, setting entirely new trends."
+                ],
+                "mendacious": [
+                    "The witness was easily caught in a mendacious account of the entire accident.",
+                    "The lawyer established that the main testimony was completely mendacious."
+                ],
+                "moribund": [
+                    "The old printing industry has been moribund for the past decade.",
+                    "The doctor gave a grave report about the patient's moribund condition."
+                ],
+                "nefarious": [
+                    "The nefarious plot to overthrow the government was discovered just in time.",
+                    "The villain was known for his truly nefarious and evil deeds."
+                ],
+                "nonchalant": [
+                    "She tried to act nonchalant as she waited for the important results.",
+                    "He gave a nonchalant shrug when asked about the missing money."
+                ],
+                "nuance": [
+                    "The translator carefully explained the subtle nuance of the ancient poetic text.",
+                    "A good politician must understand every nuance of foreign policy and diplomacy."
+                ],
+                "obsequious": [
+                    "The new assistant was excessively obsequious to her demanding manager.",
+                    "I find his overly obsequious politeness to be highly irritating."
+                ],
+                "paltry": [
+                    "The winner received a paltry reward of ten dollars for the marathon race.",
+                    "He was insulted by the paltry offer for his extensive collection of coins."
+                ],
+                "paradigm": [
+                    "The new theory established a major scientific paradigm for future research.",
+                    "The way she manages her time is the new paradigm for the entire busy office."
+                ],
+                "paragon": [
+                    "He was cited as a paragon of loyalty and moral virtue.",
+                    "The beautiful ancient statue was considered a paragon of artistic perfection."
+                ],
+                "paucity": [
+                    "There was a noticeable paucity of fresh fruit at the remote desert market.",
+                    "The scarcity of funds caused a major paucity in research materials."
+                ],
+                "pedantic": [
+                    "The professor annoyed his class with overly pedantic corrections of minor details.",
+                    "Please avoid being so pedantic and focus on the major points of the paper."
+                ],
+                "penchant": [
+                    "She has a strong penchant for collecting rare, vintage clothing.",
+                    "His penchant for loud, dramatic ties was well-known at the office."
+                ],
+                "peripatetic": [
+                    "The ancient philosopher was peripatetic, teaching while walking around the city.",
+                    "His peripatetic career path led him to work in seven different countries."
+                ],
+                "petulant": [
+                    "The child gave a loud, petulant cry when denied the expensive toy.",
+                    "The celebrity's petulant demands made the entire film crew miserable."
+                ],
+                "phlegmatic": [
+                    "The phlegmatic guard remained completely calm despite the sudden loud explosion.",
+                    "His naturally phlegmatic temperament made him an excellent emergency responder."
+                ],
+                "plethora": [
+                    "The store offered a plethora of various choices of ice cream flavors.",
+                    "The research paper contained a plethora of complex statistical data."
+                ],
+                "polemic": [
+                    "The essay was a fierce polemic against modern corporate greed.",
+                    "The fiery sermon became a strong polemic against political corruption."
+                ],
+                "pragmatic": [
+                    "He took a pragmatic approach to the problem, focusing on practical solutions.",
+                    "A good manager must be both visionary and extremely pragmatic."
+                ],
+                "prevaricate": [
+                    "The witness tried to prevaricate about her exact location during the crime.",
+                    "The child attempted to prevaricate when asked about the broken expensive vase."
+                ],
+                "quandary": [
+                    "The detective faced a difficult quandary about who was truly telling the truth.",
+                    "I am currently in a major financial quandary after losing my job."
+                ],
+                "reclusive": [
+                    "The famous writer lived a reclusive life deep in the mountain cabin.",
+                    "He became reclusive after the traumatic accident and rarely saw anyone."
+                ],
+                "remiss": [
+                    "She was deeply remiss in her duty by forgetting to lock the safe vault.",
+                    "I would be remiss if I did not thank everyone who helped me succeed."
+                ],
+                "reprobate": [
+                    "The local reprobate was constantly getting into petty trouble.",
+                    "His father feared his reprobate son would squander the family fortune."
+                ],
+                "resilient": [
+                    "The small community proved to be surprisingly resilient after the devastating storm.",
+                    "Bamboo is an incredibly resilient plant that bends easily but rarely breaks."
+                ],
+                "reticent": [
+                    "The quiet witness remained reticent and refused to answer any questions directly.",
+                    "He was naturally reticent about discussing his deeply private personal life."
+                ],
+                "ruminate": [
+                    "The philosopher decided to ruminate on the meaning of life for the entire afternoon.",
+                    "I need a quiet weekend to ruminate over the final business proposal."
+                ],
+                "sagacious": [
+                    "The old chief offered a piece of genuinely sagacious advice to the young, foolish leader.",
+                    "The university needed a sagacious leader to guide it through the upcoming financial crisis."
+                ],
+                "salient": [
+                    "The most salient point of the entire presentation was the rapid decline in sales figures.",
+                    "The judge summarized the most salient facts of the complex court case."
+                ],
+                "sartorial": [
+                    "He always displayed impeccable sartorial taste in his tailored Italian suits.",
+                    "The magazine offered tips for improving your professional sartorial style."
+                ],
+                "scintilla": [
+                    "The witness did not show even a scintilla of remorse for the crime committed.",
+                    "There was not a single scintilla of truth in the politician's entire long speech."
+                ],
+                "secular": [
+                    "The government must maintain a strictly secular distance from all religious organizations.",
+                    "The museum displays only secular art from the early 20th century."
+                ],
+                "sententious": [
+                    "The old man gave a long, sententious speech filled with cliches and moralizing phrases.",
+                    "His sententious advice was not helpful and felt overly condescending."
+                ],
+                "simulacrum": [
+                    "The theme park contained only a cheap, plastic simulacrum of an ancient Roman city.",
+                    "The new shopping mall is a simulacrum of a real, traditional town square."
+                ],
+                "stolid": [
+                    "The stolid guard showed no reaction as the chaos erupted all around him.",
+                    "His naturally stolid personality made him an excellent poker player."
+                ],
+                "subjugate": [
+                    "The invading forces quickly moved to subjugate the entire native population.",
+                    "The purpose of the strong law was to subjugate the will of the local people."
+                ],
+                "superfluous": [
+                    "The vast majority of the expensive features on the new phone are totally superfluous.",
+                    "Do not include any superfluous information in your concise report."
+                ],
+                "synthesis": [
+                    "The final theory was a logical synthesis of various disparate ideas.",
+                    "The committee achieved a successful synthesis of all the competing proposals."
+                ],
+                "taciturn": [
+                    "The taciturn man rarely spoke more than a single, short sentence at a time.",
+                    "His quiet, taciturn nature made him a terrible candidate for a sales job."
+                ],
+                "talisman": [
+                    "The ancient silver coin served as a good luck talisman against evil spirits.",
+                    "She wore a small stone talisman on a necklace around her neck."
+                ],
+                "temperance": [
+                    "He practiced strict temperance, abstaining completely from all alcoholic beverages.",
+                    "The judge was known for his extreme temperance and calm demeanor in court."
+                ],
+                "tergiversate": [
+                    "The witness tried to tergiversate when pressed for specific details.",
+                    "Stop trying to tergiversate and just give me a straight, simple answer."
+                ],
+                "timorous": [
+                    "The timorous deer fled into the dark forest at the slightest loud noise.",
+                    "He gave a shy, timorous reply when asked to speak in front of the large class."
+                ],
+                "torpid": [
+                    "The bear remained torpid throughout the long, cold winter months.",
+                    "The lack of sales indicated a torpid, slow market for luxury goods."
+                ],
+                "transient": [
+                    "The pain was only transient and disappeared completely after a few seconds.",
+                    "The city has a large, constantly moving transient population of seasonal workers."
+                ],
+                "travesty": [
+                    "The court decision was deemed a shocking travesty of justice by the media.",
+                    "The new movie adaptation was an absolute travesty of the original, classic book."
+                ],
+                "trenchant": [
+                    "The journalist delivered a trenchant critique of the government's economic policy.",
+                    "The speech was noted for its brief, powerfully trenchant wit and humor."
+                ],
+                "trepidation": [
+                    "She felt a strong sense of trepidation before boarding the long, tiny airplane.",
+                    "The students approached the difficult final exam with great trepidation."
+                ],
+                "unfathomable": [
+                    "The true depth of the cold ocean trench remains totally unfathomable.",
+                    "The mysteries of the universe are often completely unfathomable to the average mind."
+                ],
+                "unilateral": [
+                    "The decision to cut off all funding was unilateral and made without consulting the partner.",
+                    "The company decided to take unilateral action to change the entire policy."
+                ],
+                "usurp": [
+                    "The corrupt general tried to secretly usurp the king's rightful throne and power.",
+                    "The new company attempted to usurp market share from the established, older firms."
+                ],
+                "vacuous": [
+                    "He gave a vacuous, blank smile when asked about the complex equation.",
+                    "The party was filled with only shallow, vacuous conversation."
+                ],
+                "venerable": [
+                    "The venerable professor had taught at the prestigious university for over sixty years.",
+                    "The old church was a venerable structure dating back to the 14th century."
+                ],
+                "vex": [
+                    "The constant dripping of the leaky faucet was enough to vex anyone.",
+                    "His thoughtless remarks tended to vex her and ruin her entire mood."
+                ],
+                "vituperate": [
+                    "The angry speaker began to loudly vituperate his opponents from the podium.",
+                    "The editor resigned rather than face the abuse and vituperate of the readers."
+                ],
+                "wallow": [
+                    "The pigs enjoyed a slow, happy wallow in the cool, muddy dirt.",
+                    "Stop wallow in your sadness and try to cheer yourself up immediately."
+                ],
+                "whimsical": [
+                    "The entire movie featured a fantastical and very whimsical world of talking animals.",
+                    "She decorated her apartment in a colorful, playful, whimsical style."
+                ],
+                "wily": [
+                    "The wily fox managed to avoid every single one of the hunter's traps.",
+                    "The wily politician always stayed one step ahead of the competition."
+                ],
+                "yore": [
+                    "The bard sang ancient songs of heroes and brave battles of days of yore.",
+                    "Legend tells of a noble kingdom that existed in the distant days of yore."
+                ],
+                "zealous": [
+                    "The zealous volunteer worked tirelessly for the entire political campaign.",
+                    "He was a zealous supporter of the local football team."
+                ],
+                "abacus": [
+                    "The teacher showed the students how to use the abacus to calculate large numbers.",
+                    "The antique wooden abacus was displayed proudly in the museum case."
+                ],
+                "above": [
+                    "The beautiful picture hangs just above the fireplace mantel.",
+                    "The helicopter hovered high above the dense, thick jungle canopy."
+                ],
+                "addition": [
+                    "The recent addition of a new wing greatly expanded the museum.",
+                    "Two plus two equals four is a basic addition problem."
+                ],
+                "airplane": [
+                    "They boarded the airplane for the long, twelve-hour flight across the entire ocean.",
+                    "The small, single-engine airplane landed safely on the grassy field."
+                ],
+                "airport": [
+                    "She waited patiently at the airport gate for her delayed flight to arrive.",
+                    "We drove to the city airport to pick up our arriving guests."
+                ],
+                "alphabet": [
+                    "The English alphabet contains twenty-six distinct letters.",
+                    "The child proudly recited the full alphabet from memory."
+                ],
+                "ambulance": [
+                    "We heard the loud siren of the approaching ambulance in the distance.",
+                    "The paramedics loaded the patient carefully into the waiting ambulance."
+                ],
+                "ankle": [
+                    "He twisted his right ankle badly while playing basketball outside.",
+                    "She wore a delicate silver bracelet around her slender ankle."
+                ],
+                "announce": [
+                    "The principal will announce the winner of the essay contest this morning.",
+                    "They plan to announce their exciting engagement party next week."
+                ],
+                "architect": [
+                    "The architect designed a unique, sustainable house built from natural wood.",
+                    "She studied hard for years to become a successful, licensed architect."
+                ],
+                "avenue": [
+                    "We drove down the wide, busy avenue toward the city park.",
+                    "The old building stood on the corner of Elm Street and Grand Avenue."
+                ],
+                "balcony": [
+                    "They enjoyed their morning coffee on the small, sunny balcony.",
+                    "The theater seats were mostly empty in the upper balcony section."
+                ],
+                "barrier": [
+                    "Police quickly set up a metal barrier to control the large crowd.",
+                    "Lack of money often serves as a barrier to obtaining a good education."
+                ],
+                "basketball": [
+                    "He loves to play basketball every evening with his friends in the gym.",
+                    "The basketball bounced high off the rim and missed the basket."
+                ],
+                "bathroom": [
+                    "She went to the bathroom to wash her hands before dinner started.",
+                    "The new apartment has a spacious main bathroom with a large tub."
+                ],
+                "between": [
+                    "The remote village is situated between the two highest mountains.",
+                    "The negotiation was held privately between the two involved parties."
+                ],
+                "bicycle": [
+                    "He rode his old red bicycle to the store to pick up groceries.",
+                    "I need to fix the flat tire on my mountain bicycle."
+                ],
+                "biscuit": [
+                    "He ate a warm, flaky buttermilk biscuit with butter and jam.",
+                    "We bought a package of digestive biscuits to have with our tea."
+                ],
+                "bookcase": [
+                    "The antique wooden bookcase was completely filled with books.",
+                    "He built a simple, new bookcase for his expanding collection."
+                ],
+                "breakfast": [
+                    "We ate a quick, hearty breakfast of eggs and toast before leaving.",
+                    "I prefer to have a very light breakfast, usually just fruit."
+                ],
+                "buckle": [
+                    "He adjusted the tight buckle on his new leather belt.",
+                    "Remember to buckle your safety belt before the car starts moving."
+                ],
+                "business": [
+                    "She started her own small business selling handmade ceramic mugs.",
+                    "He travels often for important international business meetings."
+                ],
+                "butterfly": [
+                    "A bright orange butterfly landed gently on the colorful flower.",
+                    "The children learned about the lifecycle of the monarch butterfly."
+                ],
+                "cabbage": [
+                    "She used fresh shredded cabbage to make a crisp, tasty coleslaw.",
+                    "The recipe requires one small head of green cabbage."
+                ],
+                "cafeteria": [
+                    "We ate our hurried lunch together in the crowded school cafeteria.",
+                    "The company cafeteria serves subsidized meals to all employees."
+                ],
+                "calculator": [
+                    "She used her small scientific calculator to solve the difficult math problem.",
+                    "I need to buy a new pocket calculator before the final test."
+                ],
+                "camera": [
+                    "He used his new digital camera to capture the beautiful sunset.",
+                    "The photographer adjusted the lens settings on the vintage camera."
+                ],
+                "candlelight": [
+                    "They enjoyed a romantic dinner together by soft candlelight.",
+                    "The room was lit by the faint, flickering light of candlelight."
+                ],
+                "carnival": [
+                    "The town held a colorful carnival every year in the main square.",
+                    "She won a giant stuffed bear at the carnival ring toss game."
+                ],
+                "citizen": [
+                    "Every citizen has the right to cast a vote in the general election.",
+                    "He completed the necessary paperwork to become a naturalized citizen."
+                ],
+                "cityscape": [
+                    "The rooftop bar offered a stunning view of the glittering nighttime cityscape.",
+                    "The photograph captured the wide, sprawling cityscape at dusk."
+                ],
+                "comfortable": [
+                    "The large armchair was soft and incredibly comfortable to sit in.",
+                    "I only feel comfortable talking about this with my closest friends."
+                ],
+                "community": [
+                    "The entire local community rallied together to support the family.",
+                    "She is an active and valued member of her religious community."
+                ],
+                "compass": [
+                    "The hiker used a small magnetic compass to find his way through the dense forest.",
+                    "A moral compass guides a person's life decisions and ethics."
+                ],
+                "country": [
+                    "They drove out of the busy city and into the peaceful country.",
+                    "She dreams of visiting every single country in the world someday."
+                ],
+                "cough": [
+                    "He tried to suppress a loud cough during the quiet movie theater scene.",
+                    "The doctor prescribed syrup to treat her persistent, dry cough."
+                ],
+                "crawl": [
+                    "The baby began to crawl across the floor toward the colorful toy.",
+                    "We had to crawl under the fallen large log to continue down the path."
+                ],
+                "crowd": [
+                    "A massive crowd gathered excitedly to watch the parade march by.",
+                    "He felt a slight panic attack when lost in the huge shopping mall crowd."
+                ],
+                "curtains": [
+                    "She quickly pulled the thick curtains closed to block out the harsh morning light.",
+                    "New velvet curtains were hung over the large dining room window."
+                ],
+                "daughter": [
+                    "Their youngest daughter just graduated from the local high school.",
+                    "He walked his daughter down the aisle at her wedding ceremony."
+                ],
+                "decorate": [
+                    "They decided to decorate the cake with fresh berries and rich cream.",
+                    "The family planned to decorate the entire house for the festive holiday season."
+                ],
+                "describe": [
+                    "Can you describe the precise appearance of the person you saw running?",
+                    "The painting aims to describe the simple beauty of rural life."
+                ],
+                "description": [
+                    "The job listing included a detailed description of the required duties.",
+                    "Her vivid description of the tropical island made me want to visit immediately."
+                ],
+                "designer": [
+                    "The famous clothes designer unveiled her latest line during Fashion Week.",
+                    "He worked with an interior designer to renovate his entire apartment."
+                ],
+                "diamond": [
+                    "She inherited a beautiful antique ring set with a single diamond.",
+                    "Industrial diamond is often used for cutting extremely hard materials."
+                ],
+                "dictionary": [
+                    "I used the massive paper dictionary to look up the complex, unfamiliar word.",
+                    "A good dictionary is an essential tool for all writers and students."
+                ],
+                "difficult": [
+                    "Learning to play the violin is a very difficult skill to master.",
+                    "This math problem is proving more difficult than I originally expected."
+                ],
+                "discover": [
+                    "Scientists hope to discover a definitive cure for the common cold soon.",
+                    "She was thrilled to discover a rare, first edition book at the used bookstore."
+                ],
+                "drawing": [
+                    "He showed us a detailed charcoal drawing of a majestic horse.",
+                    "The architect prepared several new conceptual drawings for the project."
+                ],
+                "earrings": [
+                    "She chose to wear a delicate pair of small pearl earrings.",
+                    "The woman only had one hole pierced for her favorite set of earrings."
+                ],
+                "education": [
+                    "He believes a strong public education system is vital for society.",
+                    "She returned to college to pursue a higher education in law."
+                ],
+                "engineer": [
+                    "The civil engineer oversaw the massive construction of the new bridge.",
+                    "He worked for years as a software engineer at a major tech company."
+                ],
+                "english": [
+                    "She is studying English literature from the Victorian era in college.",
+                    "We only speak English in the house to help the children practice."
+                ],
+                "estimate": [
+                    "The mechanic gave us an initial written estimate for the cost of the engine repair.",
+                    "They made a rough estimate of the number of people attending the large festival."
+                ],
+                "excellent": [
+                    "She received an excellent review from her demanding supervisor.",
+                    "The dinner was absolutely excellent, deserving of five glowing stars."
+                ],
+                "exercise": [
+                    "Regular exercise is crucial for maintaining good physical health.",
+                    "She decided to exercise lightly every morning before eating breakfast."
+                ],
+                "express": [
+                    "It can be difficult to express complex emotions using only words.",
+                    "The package will be sent via express delivery for quick arrival."
+                ],
+                "eyebrows": [
+                    "He raised his thick, dark eyebrows in surprise at the news.",
+                    "She drew her delicate eyebrows on carefully using a pencil."
+                ],
+                "faucet": [
+                    "The leaky faucet dripped loudly all night long in the empty kitchen.",
+                    "Turn the garden faucet off tightly to prevent any wasteful dripping."
+                ],
+                "favorite": [
+                    "The old teddy bear was his absolute favorite toy throughout childhood.",
+                    "Blue is her favorite color when choosing clothes to wear."
+                ],
+                "firefighter": [
+                    "A brave firefighter rescued the cat stuck high in the burning tree.",
+                    "The community thanked the local firefighter for their courageous service."
+                ],
+                "flexible": [
+                    "The rubber yoga mat is made of a durable and extremely flexible material.",
+                    "The company offers flexible working hours to all of its employees."
+                ],
+                "following": [
+                    "The speaker will take questions immediately following her prepared remarks.",
+                    "Please read the following instructions very carefully before starting the test."
+                ],
+                "forehead": [
+                    "She wiped the sweat quickly from her hot forehead during the long race.",
+                    "He developed a sudden deep frown line across his worried forehead."
+                ],
+                "fortune": [
+                    "He inherited a vast fortune from his distant, unknown uncle.",
+                    "The wise old woman claims she can read your future fortune."
+                ],
+                "friendship": [
+                    "Their lifelong friendship began when they were just small children.",
+                    "The deepest bonds of true friendship can last for decades."
+                ],
+                "galaxy": [
+                    "Our own solar system is located within the Milky Way galaxy.",
+                    "The Hubble telescope captured a stunning image of a distant swirling galaxy."
+                ],
+                "garbage": [
+                    "Please take out the trash and put the garbage cans on the curb.",
+                    "The city truck collects the residential garbage every Tuesday morning."
+                ],
+                "gardenia": [
+                    "The white gardenia flower has a wonderfully sweet and powerful scent.",
+                    "She wore a single, fresh gardenia tucked into her elegant hair."
+                ],
+                "grammar": [
+                    "Learning the proper grammar rules is essential for clear writing.",
+                    "The editor quickly corrected the glaring grammar mistake in the essay."
+                ],
+                "grandparents": [
+                    "We visit my loving grandparents every summer vacation for two weeks.",
+                    "My grandparents told us wonderful, detailed stories about the past."
+                ],
+                "greeting": [
+                    "He offered a polite handshake and a cheerful verbal greeting to the guests.",
+                    "The automated phone system offered a generic pre-recorded greeting."
+                ],
+                "grumpy": [
+                    "He woke up feeling very grumpy and refused to talk to anyone all morning.",
+                    "The old troll was known throughout the forest for being perpetually grumpy."
+                ],
+                "guava": [
+                    "She sliced a fresh pink guava and added it to the morning fruit salad.",
+                    "Guava juice is a popular, refreshing tropical beverage."
+                ],
+                "gym": [
+                    "He goes to the gym every weekday afternoon to lift weights and run.",
+                    "The school built a new, state-of-the-art basketball gym."
+                ],
+                "habitat": [
+                    "The destruction of the rainforest is threatening the gorilla's natural habitat.",
+                    "The marine biologists studied the specific habitat of the rare deep-sea fish."
+                ],
+                "halloween": [
+                    "The children dressed up in scary costumes for the Halloween party.",
+                    "We carved a grinning jack-o'-lantern for Halloween night."
+                ],
+                "handsome": [
+                    "The young actor was considered very handsome by the critics and fans alike.",
+                    "The old church is a handsome building with beautiful stone architecture."
+                ],
+                "harmony": [
+                    "The choir sang in perfect harmony, creating a beautiful sound.",
+                    "The two nations worked hard to live together in lasting peace and harmony."
+                ],
+                "helicopter": [
+                    "A news helicopter circled slowly overhead, reporting on the traffic accident.",
+                    "The military uses the heavy transport helicopter to deliver supplies to remote bases."
+                ],
+                "homework": [
+                    "She stayed up late to finish her difficult math homework assignment.",
+                    "The teacher assigned a large amount of extra reading homework for the long weekend."
+                ],
+                "horizon": [
+                    "The sun slowly disappeared below the distant ocean horizon.",
+                    "We could see the city skyline just visible on the horizon."
+                ],
+                "imagination": [
+                    "She used her vivid imagination to write wonderful, creative stories.",
+                    "The child's imagination transformed the cardboard box into a spaceship."
+                ],
+                "intelligent": [
+                    "The scientist is incredibly intelligent and excels at solving complex problems.",
+                    "Dolphins and crows are considered highly intelligent animals."
+                ],
+                "island": [
+                    "They spent their entire vacation relaxing on a remote tropical island.",
+                    "The small island is only accessible by a fast ferry boat."
+                ],
+                "journalist": [
+                    "The investigative journalist broke a major scandal in the national newspaper.",
+                    "She worked for ten years as a freelance foreign correspondent journalist."
+                ],
+                "juicy": [
+                    "The grilled steak was tender and perfectly juicy.",
+                    "She bit into a ripe, sweet, and incredibly juicy peach."
+                ],
+                "jungle": [
+                    "The expedition team hiked carefully through the dense Amazonian jungle.",
+                    "A variety of colorful, exotic birds live deep within the jungle canopy."
+                ],
+                "kangaroo": [
+                    "The baby kangaroo, called a joey, peeked out from its mother's pouch.",
+                    "Kangaroos are famous for their powerful, large jumping legs."
+                ],
+                "keyboard": [
+                    "She typed the essay quickly using the silent keys on the computer keyboard.",
+                    "I need to clean the crumbs and dust out from under the old keyboard keys."
+                ],
+                "knife": [
+                    "He used a sharp kitchen knife to precisely slice the large vegetables.",
+                    "Always be careful not to run with a sharp knife in your hand."
+                ],
+                "knock": [
+                    "We heard a loud, sudden knock on the front door late at night.",
+                    "Remember to knock politely before entering the busy office."
+                ],
+                "ladybug": [
+                    "A tiny red and black ladybug landed gently on the leaf of the plant.",
+                    "Children often enjoy watching the small, slow-moving ladybug crawl around."
+                ],
+                "landscape": [
+                    "The vast desert landscape stretched out to the distant horizon.",
+                    "The artist painted a beautiful, detailed watercolor landscape of the mountain view."
+                ],
+                "laugh": [
+                    "She let out a joyful, loud laugh when she heard the funny joke.",
+                    "I often laugh uncontrollably when watching old comedy movies."
+                ],
+                "lawyer": [
+                    "The defense lawyer presented a strong, clear case in court.",
+                    "He hired an experienced corporate lawyer to manage the business merger."
+                ],
+                "lettuce": [
+                    "She tore the fresh, green leaf lettuce to make a large salad.",
+                    "The recipe calls for a mix of butter lettuce and crisp romaine lettuce."
+                ],
+                "library": [
+                    "He spent the entire afternoon quietly studying inside the university library.",
+                    "I need to return three overdue books to the public library today."
+                ],
+                "magician": [
+                    "The talented magician made a dove suddenly disappear into thin air.",
+                    "The children were amazed by the surprising tricks of the local magician."
+                ],
+                "material": [
+                    "The dress was made from a soft, light cotton material.",
+                    "The construction crew ordered the necessary building material for the new house."
+                ],
+                "mathematics": [
+                    "Solving complex equations requires a deep understanding of mathematics.",
+                    "She decided to major in pure mathematics at the prestigious university."
+                ],
+                "meadow": [
+                    "The deer grazed peacefully in the wide, sunny mountain meadow.",
+                    "We had a lovely summer picnic in the quiet, flower-filled meadow."
+                ],
+                "message": [
+                    "Please leave a detailed voicemail message after the loud tone.",
+                    "The email contained an urgent message about the scheduling change."
+                ],
+                "messenger": [
+                    "The king sent a trusted messenger with the critical written treaty.",
+                    "The bicycle messenger delivered the important documents across the busy city."
+                ],
+                "microphone": [
+                    "The singer adjusted the height of the stage microphone before the concert.",
+                    "Please speak clearly and loudly directly into the microphone."
+                ],
+                "microwave": [
+                    "He quickly heated his leftover dinner in the kitchen microwave.",
+                    "Do not put aluminum foil inside the microwave oven."
+                ],
+                "middle": [
+                    "The small tree stands directly in the middle of the empty field.",
+                    "She was born in the middle of the three siblings in her family."
+                ],
+                "motorcycle": [
+                    "He wore a thick leather jacket while riding his powerful motorcycle.",
+                    "The sleek black motorcycle sped quickly down the open highway."
+                ],
+                "nature": [
+                    "She loves spending her free time exploring the wild beauty of nature.",
+                    "His aggressive nature often caused conflicts with his colleagues."
+                ],
+                "neighborhood": [
+                    "We live in a quiet, friendly neighborhood with many large old trees.",
+                    "The local neighborhood association organizes annual block parties."
+                ],
+                "nephew": [
+                    "His favorite nephew just turned seven years old last month.",
+                    "She often babysits her mischievous young nephew on weekends."
+                ],
+                "niece": [
+                    "Her clever niece is studying to be a successful electrical engineer.",
+                    "He bought a large bicycle as a birthday gift for his beloved niece."
+                ],
+                "ninety": [
+                    "The old man celebrated his big ninetieth birthday last Sunday.",
+                    "Ninety degrees Fahrenheit is considered a very hot temperature."
+                ],
+                "notebook": [
+                    "She quickly wrote down her key ideas in her small spiral notebook.",
+                    "I need to buy a brand new lined notebook for my upcoming math class."
+                ],
+                "nugget": [
+                    "She found a small, shiny gold nugget in the rushing stream bed.",
+                    "The speaker provided a helpful nugget of financial advice during the long seminar."
+                ],
+                "observe": [
+                    "We went outside with a telescope to observe the distant, bright moon.",
+                    "The teacher asked the students to carefully observe the small chemical reaction."
+                ],
+                "octopus": [
+                    "The giant octopus is known for its remarkable intelligence and ability to change color.",
+                    "The diver spotted a large, shy octopus hiding beneath the colorful coral reef."
+                ],
+                "organized": [
+                    "The event planner is incredibly organized and manages every detail perfectly.",
+                    "The library is very well organized by the Dewey Decimal system."
+                ],
+                "owner": [
+                    "He is the proud owner of the historic local coffee shop.",
+                    "The dog refused to leave the side of its loyal and loving owner."
+                ],
+                "paddle": [
+                    "We used a wooden paddle to row the small canoe across the quiet lake.",
+                    "He used a small paddle to stir the thick, boiling candy mixture."
+                ],
+                "panic": [
+                    "A wave of sudden panic washed over her when she realized the bus was late.",
+                    "The unexpected fire alarm caused a brief moment of chaos and panic."
+                ],
+                "parachute": [
+                    "He deployed his parachute immediately after jumping out of the airplane.",
+                    "The paratroopers landed softly using their large, colorful parachute."
+                ],
+                "parade": [
+                    "The annual Thanksgiving Day parade featured many giant, colorful balloons.",
+                    "We watched the marching band lead the long military parade."
+                ],
+                "parrot": [
+                    "The green parrot could perfectly mimic human voices and sounds.",
+                    "The pirate in the old story always had a clever parrot perched on his shoulder."
+                ],
+                "penguin": [
+                    "The small penguin waddled awkwardly across the cold, icy land.",
+                    "The zoo has an excellent, large exhibit dedicated to penguins."
+                ],
+                "pepper": [
+                    "He added a sprinkle of black pepper to enhance the flavor of the egg dish.",
+                    "I bought a large red bell pepper to use in the stir-fry recipe."
+                ],
+                "picture": [
+                    "She hung a beautiful framed picture of the seaside view on the wall.",
+                    "The children drew a bright, colorful picture of their family and pets."
+                ],
+                "pigeon": [
+                    "A common gray pigeon perched on the railing of the balcony.",
+                    "Pigeons are often used to carry important written messages."
+                ],
+                "pineapple": [
+                    "We sliced the fresh, spiky pineapple for dessert after the meal.",
+                    "Pineapple juice is a popular, sweet, refreshing tropical drink."
+                ],
+                "pockets": [
+                    "He searched all of his deep jeans pockets for his missing car keys.",
+                    "The jacket has several useful interior pockets for storing small items."
+                ],
+                "porridge": [
+                    "She ate a warm bowl of creamy oatmeal porridge for a healthy breakfast.",
+                    "The story is famous for the line about the porridge being just right."
+                ],
+                "princess": [
+                    "The young princess wore a beautiful gown to the royal formal ball.",
+                    "The castle was home to the king, queen, and their only daughter, the princess."
+                ],
+                "proud": [
+                    "He was incredibly proud of his daughter's impressive academic achievements.",
+                    "The old warrior stood proud and tall, refusing to show any fear."
+                ],
+                "queen": [
+                    "The queen waved gracefully to the large crowd from the ornate balcony.",
+                    "The black queen is the most powerful piece in the game of chess."
+                ],
+                "question": [
+                    "The journalist asked a very difficult question during the press conference.",
+                    "She raised her hand to ask a clarifying question about the complex topic."
+                ],
+                "quilt": [
+                    "The homemade quilt was made from various small, colorful pieces of fabric.",
+                    "She covered the bed with a warm, heavy, hand-stitched quilt."
+                ],
+                "rectangle": [
+                    "The pool was built in the shape of a large, perfect rectangle.",
+                    "A standard letter envelope is an example of a simple rectangle."
+                ],
+                "refrigerator": [
+                    "Please store the fresh milk and butter inside the cold refrigerator.",
+                    "The new refrigerator has a convenient automatic ice maker built in."
+                ],
+                "remember": [
+                    "I can clearly remember the day we first met each other.",
+                    "Please remember to turn off all the lights before you leave the empty house."
+                ],
+                "reporter": [
+                    "A television news reporter covered the small, local traffic accident.",
+                    "The online news organization hired a new political investigative reporter."
+                ],
+                "respect": [
+                    "She earned deep respect from her colleagues through her hard work and honesty.",
+                    "Always show proper respect for your elders and teachers."
+                ],
+                "responsibility": [
+                    "Taking care of a fragile puppy is a big new responsibility.",
+                    "The responsibility for cleaning the entire kitchen falls on me."
+                ],
+                "rhyme": [
+                    "The young children loved reading books with a simple, playful rhyme.",
+                    "The poet wrote a thoughtful verse with a complex, musical rhyme scheme."
+                ],
+                "safety": [
+                    "Wearing a hard hat is mandatory for construction site safety.",
+                    "The airline emphasized that passenger safety is their absolute top priority."
+                ],
+                "salary": [
+                    "She negotiated a much higher starting salary for her new prestigious position.",
+                    "His monthly salary is directly deposited into his checking account."
+                ],
+                "salesman": [
+                    "The eager car salesman offered him a very low introductory price.",
+                    "The traveling salesman demonstrated the innovative new kitchen product."
+                ],
+                "sandwich": [
+                    "He quickly ate a large turkey and cheese sandwich for his hurried lunch.",
+                    "We packed a peanut butter and jelly sandwich for the entire picnic."
+                ],
+                "scary": [
+                    "The old haunted house looked incredibly dark and scary at midnight.",
+                    "I covered my eyes during the scary scene in the horror movie."
+                ],
+                "science": [
+                    "She decided to study environmental science at her university.",
+                    "We need to apply the principles of rigorous science to solve this issue."
+                ],
+                "scientist": [
+                    "The famous scientist won a major award for her groundbreaking research work.",
+                    "He always wanted to be a respected marine biologist scientist."
+                ],
+                "seashell": [
+                    "The children collected numerous small, colorful seashells on the sandy beach.",
+                    "She used a large seashell as a decorative soap dish."
+                ],
+                "season": [
+                    "Autumn is my favorite season because of the cool air and colorful leaves.",
+                    "The restaurant changes its entire menu based on the current growing season."
+                ],
+                "second": [
+                    "The sprinter finished the race just one second ahead of his closest rival.",
+                    "She paused for just a brief second before answering the difficult question."
+                ],
+                "secret": [
+                    "He promised never to tell anyone the deeply guarded personal secret.",
+                    "The old map showed the exact location of the hidden secret tunnel."
+                ],
+                "seesaw": [
+                    "The two small children enjoyed playing together on the playground seesaw.",
+                    "They laughed as the seesaw moved quickly up and then down."
+                ],
+                "shallow": [
+                    "The children played safely in the extremely shallow end of the wide pool.",
+                    "His arguments were too shallow and lacked any meaningful depth."
+                ],
+                "shelves": [
+                    "The bookstore had tall wooden shelves completely filled with various books.",
+                    "She used a sturdy ladder to reach the highest storage shelves."
+                ],
+                "shoehorn": [
+                    "He used a long plastic shoehorn to help him slip on his tight leather boots.",
+                    "A small metal shoehorn is a very useful travel accessory."
+                ],
+                "shovel": [
+                    "He used a large, heavy shovel to move the deep snow off the driveway.",
+                    "We need to buy a new garden shovel for planting trees in the spring."
+                ],
+                "signature": [
+                    "The official document requires a notarized signature from both parties involved.",
+                    "He asked the famous author for her personal, autographed signature."
+                ],
+                "skating": [
+                    "She loves spending the cold winter weekends ice skating at the local rink.",
+                    "Roller skating is a popular and very fun activity at the town park."
+                ],
+                "skyline": [
+                    "The modern city skyline was dominated by several tall, glittering skyscrapers.",
+                    "We enjoyed the vast view of the city skyline from the quiet hill."
+                ],
+                "slippers": [
+                    "She put on her soft, warm, comfortable slippers after getting out of bed.",
+                    "He changed out of his work boots and into his cozy house slippers."
+                ],
+                "snowman": [
+                    "The children worked together to build a large, perfect snowman in the yard.",
+                    "They used two buttons for the eyes of the grinning snowman."
+                ],
+                "soccer": [
+                    "He plays soccer every Saturday morning with his friends in the large park.",
+                    "The entire country went wild when their national soccer team scored the final goal."
+                ],
+                "sock": [
+                    "I can only find one single blue sock after doing all the laundry.",
+                    "He accidentally stepped in a muddy puddle and soaked his entire white sock."
+                ],
+                "spaghetti": [
+                    "We ate a large, delicious meal of spaghetti with rich tomato sauce.",
+                    "She carefully twirled the long spaghetti noodles onto her fork."
+                ],
+                "spider": [
+                    "A tiny black spider slowly crawled across the white ceiling.",
+                    "The garden is full of beautiful webs spun by the large orb-weaver spider."
+                ],
+                "staircase": [
+                    "The grand old hotel lobby featured a magnificent marble staircase.",
+                    "She slowly walked up the winding wooden staircase to the second floor."
+                ],
+                "stamp": [
+                    "I need to buy a new postage stamp to mail this important letter.",
+                    "He collects rare, valuable commemorative stamps from all over the world."
+                ],
+                "statue": [
+                    "The park features a large bronze statue of the town's founding father.",
+                    "The ancient Greek statue was missing both of its arms."
+                ],
+                "stairs": [
+                    "Be careful not to trip when you walk quickly down the steep stairs.",
+                    "He took the small elevator instead of climbing the flight of stairs."
+                ],
+                "suitcase": [
+                    "She packed all of her clothes and necessary items into a large rolling suitcase.",
+                    "He accidentally picked up the wrong black suitcase from the crowded airport carousel."
+                ],
+                "summer": [
+                    "We always go swimming and sailing during the long, hot summer months.",
+                    "She spent her entire summer vacation working at the remote beach resort."
+                ],
+                "sunflower": [
+                    "The tall, bright yellow sunflower turned its head toward the morning sun.",
+                    "She planted rows of seeds hoping to grow a giant sunflower in her garden."
+                ],
+                "sweatshirt": [
+                    "He put on a warm, thick gray sweatshirt when the evening got chilly.",
+                    "The logo of the university was printed proudly on the front of her sweatshirt."
+                ],
+                "swimming": [
+                    "She goes swimming in the cold ocean every single morning.",
+                    "We are planning to build a large new swimming pool in the backyard."
+                ],
+                "syllable": [
+                    "The word 'cat' contains only one single syllable.",
+                    "She asked the student to break the complex word down into two easy syllables."
+                ],
+                "tablecloth": [
+                    "She carefully spread a fresh, white linen tablecloth over the dining room table.",
+                    "The red wine spilled quickly onto the patterned tablecloth."
+                ],
+                "teacher": [
+                    "The history teacher assigned a long, difficult essay for the students.",
+                    "She decided to study education in order to become an elementary school teacher."
+                ],
+                "telephone": [
+                    "The old telephone rang loudly, startling everyone in the quiet room.",
+                    "I need to quickly call my mother on the telephone to tell her the exciting news."
+                ],
+                "telescope": [
+                    "He used his powerful telescope to observe the distant planet Jupiter.",
+                    "The astronomer adjusted the position of the large observatory telescope."
+                ],
+                "tennis": [
+                    "They played a competitive game of tennis on the new local court.",
+                    "She bought a new lightweight racquet specifically for playing tennis."
+                ],
+                "thermometer": [
+                    "The nurse used a digital thermometer to check the patient's temperature.",
+                    "The mercury in the old glass thermometer rose quickly under the hot sun."
+                ],
+                "thunder": [
+                    "The distant sound of loud thunder rolled across the wide valley.",
+                    "The crash of thunder startled the small, nervous dog."
+                ],
+                "ticket": [
+                    "He bought a single train ticket for the journey to the coastal city.",
+                    "You need to show your identification along with your concert ticket at the door."
+                ],
+                "tights": [
+                    "She wore warm, thick, dark wool tights under her light skirt.",
+                    "The ballet dancer quickly slipped into her pink satin tights."
+                ],
+                "toothbrush": [
+                    "Always use a soft-bristled toothbrush to clean your teeth gently.",
+                    "I need to buy a new electric toothbrush from the pharmacy today."
+                ],
+                "tornado": [
+                    "The powerful tornado ripped through the small town, destroying homes.",
+                    "The siren warned the residents of the approaching dangerous tornado."
+                ],
+                "tortoise": [
+                    "The ancient tortoise slowly pulled its head into its heavy, hard shell.",
+                    "A tortoise can live for a surprising number of years in the correct conditions."
+                ],
+                "traffic": [
+                    "The major accident caused severe traffic delays for many hours.",
+                    "She complained about the constant heavy morning traffic on the busy highway."
+                ],
+                "train": [
+                    "He boarded the fast train for the long journey to the major capital city.",
+                    "We watched the long freight train slowly move across the flat, open desert."
+                ],
+                "treasure": [
+                    "The old map showed the precise location of the long-lost pirate treasure.",
+                    "The deep friendship of the two women was a true treasure."
+                ],
+                "trousers": [
+                    "He wore a clean, pressed gray suit and matching wool trousers.",
+                    "She quickly ironed a sharp crease into the front of her trousers."
+                ],
+                "umbrella": [
+                    "She opened her large black umbrella immediately as the heavy rain began to fall.",
+                    "I always keep a small folding umbrella tucked inside my large backpack."
+                ],
+                "uniform": [
+                    "The students were required to wear a strict school uniform every day.",
+                    "The security guards wore matching dark blue and gold uniforms."
+                ],
+                "university": [
+                    "She received a major scholarship to attend the prestigious city university.",
+                    "He teaches history classes at the local state university."
+                ],
+                "valley": [
+                    "The remote town was situated deep inside a quiet, fertile valley.",
+                    "We could see the river winding slowly through the wide valley below us."
+                ],
+                "vegetables": [
+                    "She grew a variety of fresh vegetables in her large summer garden.",
+                    "Make sure to eat plenty of healthy, colorful fruits and vegetables every day."
+                ],
+                "view": [
+                    "The apartment balcony offered a stunning panoramic view of the entire ocean.",
+                    "The mountain summit provided a wonderful, clear view of the surrounding landscape."
+                ],
+                "violin": [
+                    "He has played the sensitive violin instrument since he was a small child.",
+                    "The orchestra's soloist played a moving piece on her expensive violin."
+                ],
+                "volcano": [
+                    "The scientists monitored the active volcano for any sudden signs of eruption.",
+                    "The ancient city was buried by the ash of the exploding volcano."
+                ],
+                "wallet": [
+                    "He realized his large leather wallet was missing after leaving the restaurant.",
+                    "She kept her various identification cards and cash inside her small purse wallet."
+                ],
+                "washing": [
+                    "He spent the afternoon doing a large pile of laundry and clothes washing.",
+                    "The car really needs a good washing after driving on the dusty back roads."
+                ],
+                "waterfall": [
+                    "The tall waterfall cascaded violently down the steep cliff face.",
+                    "We hiked to the remote area to see the impressive, wide waterfall."
+                ],
+                "weather": [
+                    "The unpredictable weather quickly changed from sunny to heavy rain.",
+                    "Check the local weather forecast before you plan your hiking trip."
+                ],
+                "weekend": [
+                    "We plan to spend the upcoming weekend camping by the quiet lake.",
+                    "She always looks forward to the relaxing arrival of the long weekend."
+                ],
+                "whale": [
+                    "The enormous blue whale is the largest animal ever known to have lived on Earth.",
+                    "We saw a giant humpback whale breach the surface near our small boat."
+                ],
+                "wheelbarrow": [
+                    "He used the sturdy metal wheelbarrow to transport the heavy bags of soil.",
+                    "The gardener pushed the full wheelbarrow across the soft lawn."
+                ],
+                "windmill": [
+                    "The historic wooden windmill stands proudly on the top of the flat hill.",
+                    "The modern turbine is essentially a very large, efficient electricity-generating windmill."
+                ],
+                "window": [
+                    "She opened the wide bedroom window to let in the fresh morning air.",
+                    "A bird flew accidentally into the clean glass of the closed window."
+                ],
+                "winter": [
+                    "The snow falls heavily every year during the cold, harsh winter months.",
+                    "She prefers the hot weather of summer over the deep cold of winter."
+                ],
+                "xylophone": [
+                    "The child happily played a simple, bright tune on the wooden xylophone.",
+                    "The orchestra uses a large metal xylophone for percussion effects."
+                ],
+                "yacht": [
+                    "The millionaire anchored his enormous luxury yacht in the quiet harbor.",
+                    "They spent the whole day sailing lazily on the small racing yacht."
+                ],
+                "yawn": [
+                    "He let out a loud, uncontrollable yawn during the long, boring meeting.",
+                    "The sleepy child covered his wide mouth during his morning yawn."
+                ],
+                "zebra": [
+                    "The beautiful black and white striped zebra grazed peacefully in the savanna.",
+                    "The zoo has a large, popular enclosure for their group of friendly zebras."
+                ],
+                "zipper": [
+                    "The metal zipper on his heavy jacket was completely broken.",
+                    "She struggled to pull the small, stiff zipper up the back of the dress."
+                ]
+            }
+        };
+    }
+
+    loadStateFromStorage() {
+        this.state.customLists = JSON.parse(localStorage.getItem('sb_customLists') || '{}');
+        this.state.activeListName = localStorage.getItem('sb_activeListName') || 'Default (Emma)'; // Updated default list name
+        this.state.inactiveWords = JSON.parse(localStorage.getItem('sb_inactiveWords') || '[]');
+        this.state.missedWords = JSON.parse(localStorage.getItem('sb_missedWords') || '[]');
+        this.state.difficulty = localStorage.getItem('sb_difficulty') || 'EASY';
+
+        for (const level in this.difficultySettings) {
+            this.state.best[level] = Number(localStorage.getItem(`sb_best_${level}`) || '0');
+            this.state.topStreak[level] = Number(localStorage.getItem(`sb_topStreak_${level}`) || '0');
+        }
+        this.GameLogic.setActiveWordList(this.state.activeListName);
+        // Ensure UI reflects loaded difficulty
+        this.GameLogic.setDifficulty(this.state.difficulty); 
+    }
+
+    // --- Core Initialization ---
+    init() {
+        this.loadStateFromStorage();
+        this.bindEvents();
+        this.UI.renderAll();
+        this.Speech.init(); // <-- FIX: Initialize speech engine/dropdown immediately on load
+        this.UI.setGameActive(false);
+    }
+
+    // --- Event Binding ---
+    bindEvents() {
+        const { DOMElements } = this;
+        
+        // Game Controls
+        DOMElements.startBtn.onclick = () => this.GameLogic.startGame();
+        DOMElements.repeatBtn.onclick = () => this.Speech.speak(this.state.currentWord);
+        DOMElements.sentenceBtn.onclick = () => this.Content.speakContent('sentence');
+        DOMElements.anotherSentenceBtn.onclick = () => this.Content.speakContent('anotherSentence'); // Restored
+        DOMElements.defBtn.onclick = () => this.Content.speakContent('definition');
+        DOMElements.wordListBtn.onclick = () => this.UI.showWordListModal();
+
+        // Difficulty
+        DOMElements.difficultyBtns.forEach(btn => {
+            btn.onclick = () => {
+                this.GameLogic.setDifficulty(btn.dataset.difficulty);
+                localStorage.setItem('sb_difficulty', btn.dataset.difficulty);
+            };
+        });
+
+        // List Management
+        DOMElements.uploadBtn.onclick = () => DOMElements.csvUpload.click();
+        DOMElements.csvUpload.onchange = (e) => this.handleCsvUpload(e);
+        DOMElements.listSelect.onchange = () => this.handleListSelect();
+        DOMElements.deleteListBtn.onclick = () => this.handleDeleteList();
+        
+        // Input
+        DOMElements.answer.addEventListener('input', () => this.handleAnswerInput());
+        DOMElements.answer.addEventListener('paste', (e) => this.handlePaste(e));
+        
+        // Modal Close
+        DOMElements.wordListModal.closeBtn.onclick = () => DOMElements.wordListModal.overlay.style.display = 'none';
+    }
+
+    // --- Input & List Handlers (Moved from Listeners) ---
+    handleAnswerInput() {
+        // Capture the current word state safely at the start of the function
+        const currentWord = this.state.currentWord; 
+
+        if (!currentWord) return;
+        
+        const answerEl = this.DOMElements.answer;
+        const val = (answerEl.textContent || '').replace(/·/g, '').trim();
+        
+        // 1. Check for immediate wrong length (prevent buffer overflow in contenteditable)
+        if (val.length > currentWord.length) {
+            this.GameLogic.handleIncorrectLetter();
+            return;
+        }
+
+        // 2. Check for mismatch
+        let isWrong = false;
+        for (let i = 0; i < val.length; i++) {
+            if (val[i].toLowerCase() !== currentWord[i].toLowerCase()) {
+                isWrong = true;
+                break;
+            }
+        }
+
+        this.UI.renderLiveAnswer(val);
+
+        if (isWrong) {
+            this.GameLogic.handleIncorrectLetter();
+        } else if (val.toLowerCase() === currentWord.toLowerCase()) {
+            // Pass the successfully completed word to the handler for synchronous use
+            this.GameLogic.handleCorrectAnswer(currentWord); 
+        }
+    }
+    
+    handlePaste(e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text.replace(/[^a-zA-Z]/g, '')); // Clean and insert
+    }
+
+    handleCsvUpload(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        file.text().then(text => {
+            const rows = text.split('\n').map(t => t.trim()).filter(Boolean);
+            if (!rows.length) return this.UI.showAlert('No data found in CSV.');
+            
+            // Simple parsing: take first comma-separated value, clean quotes/whitespace
+            const data = rows.map(line => line.split(',')[0].replace(/^"|"$/g, '').trim()).filter(Boolean);
+            
+            // Filter out short words and duplicates
+            const parsed = [...new Set(data.filter(w => w.length >= 3 && /^[a-zA-Z]+$/.test(w.toLowerCase())))];
+            
+            if (parsed.length) {
+                this.UI.showPrompt("Name your word list:", file.name.replace(/\.csv$/i, '') || "My Custom List", (listName) => {
+                    this.state.customLists[listName] = parsed;
+                    localStorage.setItem('sb_customLists', JSON.stringify(this.state.customLists));
+                    this.UI.renderCustomListsDropdown();
+                    this.GameLogic.setActiveWordList(listName);
+                    this.DOMElements.listSelect.value = listName;
+                    this.UI.showAlert(`Saved and activated list: "${listName}" with ${parsed.length} words.`);
+                });
+            } else {
+                this.UI.showAlert('Could not parse any valid words (min 3 letters, letters only) from CSV.');
+            }
+        }).catch(() => this.UI.showAlert('Error reading file.'));
+    }
+
+    handleListSelect() {
+        const selectedList = this.DOMElements.listSelect.value;
+        const confirmChange = () => {
+            this.GameLogic.setActiveWordList(selectedList);
+            this.UI.setGameActive(false);
+        };
+        if (this.state.currentWord) {
+            this.UI.showAlert("Changing lists will end your current game. Continue?", confirmChange);
+        } else {
+            confirmChange();
+        }
+    }
+
+    handleDeleteList() {
+        const selectedList = this.DOMElements.listSelect.value;
+        const isDefault = !!this.state.defaultLists[selectedList]; // Check if it's one of the built-in lists
+        
+        if (isDefault) {
+            return this.UI.showAlert(`The built-in list "${selectedList}" cannot be deleted.`);
+        }
+        
+        const confirmDelete = () => {
+            delete this.state.customLists[selectedList];
+            localStorage.setItem('sb_customLists', JSON.stringify(this.state.customLists));
+            this.GameLogic.setActiveWordList('Default (Example)');
+            this.UI.renderCustomListsDropdown();
+            this.UI.showAlert(`List "${selectedList}" has been deleted. Default (Example) list is now active.`);
+        };
+        this.UI.showAlert(`Are you sure you want to delete the list "${selectedList}"?`, confirmDelete);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Instantiate the main application
+    new SpellingBeeApp().init();
+});
+</script>
+</body>
+</html>
